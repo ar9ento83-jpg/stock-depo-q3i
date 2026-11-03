@@ -1,0 +1,134 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width, initial-scale=1">
+<title>STOCK DEPO Q3i</title>
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #f2f4f7;
+  margin: 0;
+  padding: 20px;
+}
+h2 { text-align: center; }
+button, input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 16px;
+  margin: 8px 0;
+  font-size: 18px;
+  border-radius: 10px;
+}
+button {
+  background: #176b40;
+  color: white;
+  border: none;
+}
+#video {
+  width: 100%;
+  display: none;
+  border-radius: 12px;
+}
+#resultado {
+  background: white;
+  padding: 16px;
+  margin-top: 15px;
+  border-radius: 10px;
+}
+</style>
+</head>
+<body>
+
+<h2>STOCK DEPO</h2>
+
+<input id="codigo"
+       placeholder="SKU o código de barras">
+
+<button onclick="buscar()">BUSCAR</button>
+<button onclick="abrirCamara()">ESCANEAR</button>
+<button onclick="cerrarCamara()">CERRAR CÁMARA</button>
+
+<video id="video" autoplay playsinline></video>
+
+<div id="resultado">Esperando producto...</div>
+
+<script>
+let stream = null;
+let detector = null;
+let escaneando = false;
+
+function buscar() {
+  const codigo = document.getElementById("codigo").value.trim();
+  document.getElementById("resultado").textContent =
+    codigo ? "Código leído: " + codigo : "Ingresá un código";
+}
+
+async function abrirCamara() {
+  if (!("BarcodeDetector" in window)) {
+    alert("Este navegador no admite BarcodeDetector");
+    return;
+  }
+
+  try {
+    detector = new BarcodeDetector({
+      formats: ["ean_13", "ean_8", "code_128", "code_39", "upc_a"]
+    });
+
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+      audio: false
+    });
+
+    const video = document.getElementById("video");
+    video.srcObject = stream;
+    video.style.display = "block";
+    await video.play();
+
+    escaneando = true;
+    detectar();
+  } catch (error) {
+    cerrarCamara();
+    alert("Error de cámara: " + error.message);
+  }
+}
+
+async function detectar() {
+  if (!escaneando) return;
+
+  try {
+    const codigos = await detector.detect(
+      document.getElementById("video")
+    );
+
+    if (codigos.length > 0) {
+      document.getElementById("codigo").value =
+        codigos[0].rawValue;
+
+      cerrarCamara();
+      buscar();
+      return;
+    }
+  } catch (error) {
+    console.log(error);
+  }
+
+  if (escaneando) setTimeout(detectar, 250);
+}
+
+function cerrarCamara() {
+  escaneando = false;
+
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+    stream = null;
+  }
+
+  document.getElementById("video").style.display = "none";
+}
+</script>
+
+</body>
+</html>
