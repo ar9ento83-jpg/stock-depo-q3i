@@ -90,7 +90,7 @@ function iniciarGoogle() {
     }
   );
 }
-
+let credencialGoogle = null;
 async function recibirCredencial(response) {
   const estado = document.getElementById("estadoLogin");
 
@@ -118,7 +118,8 @@ async function recibirCredencial(response) {
     const datos = await respuesta.json();
 
     if (respuesta.ok && datos.ok && datos.autorizado) {
-      estado.textContent = "Acceso autorizado - " + datos.rol;
+  credencialGoogle = response.credential;
+  estado.textContent = "Acceso autorizado - " + datos.rol;
     } else {
       estado.textContent =
         "Acceso denegado: " + (datos.error || "Error desconocido");
@@ -134,10 +135,63 @@ async function recibirCredencial(response) {
 window.addEventListener("load", iniciarGoogle);
 
       
-function buscar() {
+
+async function buscar() {
   const codigo = document.getElementById("codigo").value.trim();
-  document.getElementById("resultado").textContent =
-    codigo ? "Código leído: " + codigo : "Ingresá un código";
+  const resultado = document.getElementById("resultado");
+
+  if (!codigo) {
+    resultado.textContent = "Ingresá un código";
+    return;
+  }
+
+  if (!credencialGoogle) {
+    resultado.textContent = "Primero iniciá sesión con Google";
+    return;
+  }
+
+  resultado.textContent = "Buscando producto...";
+
+  try {
+    const respuesta = await fetch(
+      "https://pos-depo-api-463384720815.southamerica-east1.run.app/stock",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          credential: credencialGoogle,
+          codigo: codigo
+        })
+      }
+    );
+
+    const datos = await respuesta.json();
+
+    if (!respuesta.ok || !datos.ok) {
+      if (respuesta.status === 401) {
+        credencialGoogle = null;
+        resultado.textContent = "Sesión vencida. Iniciá sesión nuevamente.";
+      } else {
+        resultado.textContent = datos.error || "Error al buscar";
+      }
+      return;
+    }
+
+    const producto = datos.producto;
+
+    resultado.textContent =
+      "SKU: " + producto.sku + "\n" +
+      "Descripción: " + producto.descripcion + "\n" +
+      "Stock disponible: " + producto.stock;
+
+    resultado.style.whiteSpace = "pre-line";
+
+  } catch (error) {
+    console.error(error);
+    resultado.textContent = "Error de conexión con el servidor";
+  }
 }
 
 async function abrirCamara() {
