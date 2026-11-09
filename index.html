@@ -2,109 +2,270 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-      
-<script src="https://accounts.google.com/gsi/client" async defer></script>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1">
 
-<meta charset="UTF-8">
-<meta name="viewport"
-      content="width=device-width, initial-scale=1">
-<title>STOCK DEPO Q3i</title>
-<style>
-body {
-  font-family: Arial, sans-serif;
-  background: #f2f4f7;
-  margin: 0;
-  padding: 20px;
-}
-h2 { text-align: center; }
-button, input {
-  box-sizing: border-box;
-  width: 100%;
-  padding: 16px;
-  margin: 8px 0;
-  font-size: 18px;
-  border-radius: 10px;
-}
-button {
-  background: #176b40;
-  color: white;
-  border: none;
-}
-#video {
-  width: 100%;
-  display: none;
-  border-radius: 12px;
-}
-#resultado {
-  background: white;
-  padding: 16px;
-  margin-top: 15px;
-  border-radius: 10px;
-}
-</style>
+  <title>POS DEPO</title>
+
+  <script
+    src="https://accounts.google.com/gsi/client"
+    async defer>
+  </script>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #f2f4f7;
+      margin: 0;
+      padding: 16px;
+      color: #263238;
+    }
+
+    h2 { text-align: center; }
+
+    button, input {
+      width: 100%;
+      padding: 16px;
+      margin: 8px 0;
+      font-size: 18px;
+      border-radius: 10px;
+    }
+
+    button {
+      background: #176b40;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      background: #aab2b8;
+      cursor: default;
+    }
+
+    input {
+      border: 1px solid #cbd5dc;
+      background: white;
+    }
+
+    .panel {
+      background: white;
+      border-radius: 14px;
+      padding: 16px;
+      margin: 12px 0;
+    }
+
+    .oculto { display: none !important; }
+
+    .menu {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .menu button {
+      min-height: 125px;
+      margin: 0;
+      padding: 14px 8px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 9px;
+      font-size: 16px;
+      font-weight: bold;
+    }
+
+    .menu .icono { font-size: 32px; }
+
+    .menu .pendiente {
+      background: #607d8b;
+    }
+
+    .menu small {
+      font-size: 11px;
+      font-weight: normal;
+    }
+
+    .secundario {
+      background: #52616b;
+    }
+
+    #video {
+      width: 100%;
+      display: none;
+      border-radius: 12px;
+      margin-top: 10px;
+    }
+
+    #resultado {
+      background: #f2f4f7;
+      padding: 16px;
+      margin-top: 15px;
+      border-radius: 10px;
+      white-space: pre-line;
+      min-height: 55px;
+    }
+
+    #usuarioActual {
+      font-size: 14px;
+      text-align: center;
+      color: #176b40;
+      font-weight: bold;
+    }
+
+    .nota {
+      font-size: 13px;
+      color: #607d8b;
+    }
+  </style>
 </head>
+
 <body>
 
-<h2>STOCK DEPO</h2>
+  <h2>POS DEPO</h2>
 
-<div id="login">
-  <h3>Acceso al depósito</h3>
-  <p>Ingresá con tu cuenta de Google autorizada.</p>
+  <!-- INICIO DE SESIÓN -->
+  <section id="login" class="panel">
+    <h3>Acceso al depósito</h3>
+    <p>Ingresá con tu cuenta de Google autorizada.</p>
 
-  <div id="googleButton"></div>
+    <div id="googleButton"></div>
+    <p id="estadoLogin"></p>
+  </section>
 
-  <p id="estadoLogin"></p>
-</div>
+  <!-- MENÚ PRINCIPAL -->
+  <section id="pantallaMenu" class="oculto">
 
-<input id="codigo"
-       placeholder="SKU o código de barras">
+    <p id="usuarioActual"></p>
 
-<button onclick="buscar()">BUSCAR</button>
-<button onclick="abrirCamara()">ESCANEAR</button>
-<button onclick="cerrarCamara()">CERRAR CÁMARA</button>
+    <div class="menu">
 
-<video id="video" autoplay playsinline></video>
+      <button onclick="abrirModulo('stock')">
+        <span class="icono">🔎</span>
+        Consultar stock
+      </button>
 
-<div id="resultado">Esperando producto...</div>
+      <button class="pendiente"
+              onclick="abrirModulo('ingreso')">
+        <span class="icono">📦</span>
+        Ingreso de mercadería
+        <small>Próximamente</small>
+      </button>
+
+      <button class="pendiente"
+              onclick="abrirModulo('pedidos')">
+        <span class="icono">📋</span>
+        Armado de pedidos
+        <small>Próximamente</small>
+      </button>
+
+      <button class="pendiente"
+              onclick="abrirModulo('exterior')">
+        <span class="icono">🚚</span>
+        Stock exterior
+        <small>Camionetas 1 y 2</small>
+      </button>
+
+    </div>
+
+  </section>
+
+  <!-- CONSULTAR STOCK -->
+  <section id="pantallaStock" class="oculto">
+
+    <button class="secundario" onclick="volverMenu()">
+      ← VOLVER AL MENÚ
+    </button>
+
+    <div class="panel">
+      <h3>Consultar stock</h3>
+
+      <input id="codigo"
+             placeholder="SKU o código de barras"
+             autocomplete="off">
+
+      <button onclick="buscar()">BUSCAR</button>
+
+      <button onclick="abrirCamara()">
+        ESCANEAR
+      </button>
+
+      <button class="secundario"
+              onclick="cerrarCamara()">
+        CERRAR CÁMARA
+      </button>
+
+      <video id="video" autoplay playsinline></video>
+
+      <div id="resultado">Esperando producto...</div>
+    </div>
+
+  </section>
+
+  <!-- MÓDULOS FUTUROS -->
+  <section id="pantallaPendiente" class="oculto">
+
+    <button class="secundario" onclick="volverMenu()">
+      ← VOLVER AL MENÚ
+    </button>
+
+    <div class="panel">
+      <h3 id="tituloPendiente"></h3>
+      <p>Este módulo está pendiente de desarrollo.</p>
+      <p class="nota">
+        Todavía no realiza operaciones sobre el inventario.
+      </p>
+    </div>
+
+  </section>
 
 <script>
-let stream = null;
-let detector = null;
-let escaneando = false;
+  const CLIENT_ID =
+    "463384720815-n0tlr1squ80f2h2srkfuiodd63n0alhd.apps.googleusercontent.com";
 
+  const API =
+    "https://pos-depo-api-463384720815.southamerica-east1.run.app";
 
-const CLIENT_ID = "463384720815-n0tlr1squ80f2h2srkfuiodd63n0alhd.apps.googleusercontent.com";
+  let credencialGoogle = null;
+  let rolUsuario = null;
 
-function iniciarGoogle() {
-  google.accounts.id.initialize({
-    client_id: CLIENT_ID,
-    callback: recibirCredencial
-  });
+  let stream = null;
+  let detector = null;
+  let escaneando = false;
 
-  google.accounts.id.renderButton(
-    document.getElementById("googleButton"),
-    {
-      theme: "outline",
-      size: "large",
-      text: "signin_with"
-    }
-  );
-}
-let credencialGoogle = null;
-async function recibirCredencial(response) {
-  const estado = document.getElementById("estadoLogin");
+  function iniciarGoogle() {
+    google.accounts.id.initialize({
+      client_id: CLIENT_ID,
+      callback: recibirCredencial
+    });
 
-  if (!response.credential) {
-    estado.textContent = "No se pudo iniciar sesión.";
-    return;
+    google.accounts.id.renderButton(
+      document.getElementById("googleButton"),
+      {
+        theme: "outline",
+        size: "large",
+        text: "signin_with"
+      }
+    );
   }
 
-  estado.textContent = "Verificando usuario...";
+  async function recibirCredencial(response) {
+    const estado = document.getElementById("estadoLogin");
 
-  try {
-    const respuesta = await fetch(
-      "https://pos-depo-api-463384720815.southamerica-east1.run.app/auth",
-      {
+    if (!response.credential) {
+      estado.textContent = "No se pudo iniciar sesión.";
+      return;
+    }
+
+    estado.textContent = "Verificando usuario...";
+
+    try {
+      const respuesta = await fetch(API + "/auth", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -112,50 +273,104 @@ async function recibirCredencial(response) {
         body: JSON.stringify({
           credential: response.credential
         })
+      });
+
+      const datos = await respuesta.json();
+
+      if (respuesta.ok && datos.ok && datos.autorizado) {
+        credencialGoogle = response.credential;
+        rolUsuario = datos.rol;
+
+        document.getElementById("usuarioActual")
+          .textContent = "Usuario autorizado: " + rolUsuario;
+
+        document.getElementById("login")
+          .classList.add("oculto");
+
+        mostrarPantalla("pantallaMenu");
+
+      } else {
+        credencialGoogle = null;
+        rolUsuario = null;
+
+        estado.textContent =
+          "Acceso denegado: " +
+          (datos.error || "Error desconocido");
       }
-    );
 
-    const datos = await respuesta.json();
-
-    if (respuesta.ok && datos.ok && datos.autorizado) {
-  credencialGoogle = response.credential;
-  estado.textContent = "Acceso autorizado - " + datos.rol;
-    } else {
+    } catch (error) {
+      console.error(error);
       estado.textContent =
-        "Acceso denegado: " + (datos.error || "Error desconocido");
+        "Error de conexión con POS DEPO";
+    }
+  }
+
+  function mostrarPantalla(id) {
+    [
+      "pantallaMenu",
+      "pantallaStock",
+      "pantallaPendiente"
+    ].forEach(pantalla => {
+      document.getElementById(pantalla)
+        .classList.add("oculto");
+    });
+
+    document.getElementById(id)
+      .classList.remove("oculto");
+  }
+
+  function abrirModulo(modulo) {
+    if (!credencialGoogle) {
+      alert("Primero iniciá sesión.");
+      return;
     }
 
-  } catch (error) {
-    console.error(error);
-    estado.textContent = "Error de conexión con POS DEPO";
-  }
-}
+    cerrarCamara();
 
+    if (modulo === "stock") {
+      mostrarPantalla("pantallaStock");
+      return;
+    }
 
-window.addEventListener("load", iniciarGoogle);
+    const titulos = {
+      ingreso: "Ingreso de mercadería",
+      pedidos: "Armado de pedidos",
+      exterior: "Stock exterior - Camionetas"
+    };
 
-      
+    document.getElementById("tituloPendiente")
+      .textContent = titulos[modulo] || "Módulo";
 
-async function buscar() {
-  const codigo = document.getElementById("codigo").value.trim();
-  const resultado = document.getElementById("resultado");
-
-  if (!codigo) {
-    resultado.textContent = "Ingresá un código";
-    return;
-  }
-
-  if (!credencialGoogle) {
-    resultado.textContent = "Primero iniciá sesión con Google";
-    return;
+    mostrarPantalla("pantallaPendiente");
   }
 
-  resultado.textContent = "Buscando producto...";
+  function volverMenu() {
+    cerrarCamara();
+    mostrarPantalla("pantallaMenu");
+  }
 
-  try {
-    const respuesta = await fetch(
-      "https://pos-depo-api-463384720815.southamerica-east1.run.app/stock",
-      {
+  async function buscar() {
+    const codigo =
+      document.getElementById("codigo").value.trim();
+
+    const resultado =
+      document.getElementById("resultado");
+
+    if (!codigo) {
+      resultado.textContent = "Ingresá un código";
+      return;
+    }
+
+    if (!credencialGoogle) {
+      resultado.textContent =
+        "Primero iniciá sesión con Google";
+      return;
+    }
+
+    resultado.textContent = "Buscando producto...";
+
+    try {
+      const respuesta = await fetch(API + "/stock", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -164,99 +379,124 @@ async function buscar() {
           credential: credencialGoogle,
           codigo: codigo
         })
-      }
-    );
+      });
 
-    const datos = await respuesta.json();
+      const datos = await respuesta.json();
 
-    if (!respuesta.ok || !datos.ok) {
-      if (respuesta.status === 401) {
-        credencialGoogle = null;
-        resultado.textContent = "Sesión vencida. Iniciá sesión nuevamente.";
-      } else {
-        resultado.textContent = datos.error || "Error al buscar";
+      if (!respuesta.ok || !datos.ok) {
+        if (respuesta.status === 401) {
+          credencialGoogle = null;
+          rolUsuario = null;
+
+          cerrarCamara();
+          mostrarPantalla("pantallaMenu");
+          document.getElementById("pantallaMenu")
+            .classList.add("oculto");
+          document.getElementById("login")
+            .classList.remove("oculto");
+
+          resultado.textContent =
+            "Sesión vencida. Iniciá sesión nuevamente.";
+        } else {
+          resultado.textContent =
+            datos.error || "Error al buscar";
+        }
+        return;
       }
+
+      const producto = datos.producto;
+
+      resultado.textContent =
+        "SKU: " + producto.sku + "\n" +
+        "Descripción: " + producto.descripcion + "\n" +
+        "Stock disponible: " + producto.stock;
+
+    } catch (error) {
+      console.error(error);
+      resultado.textContent =
+        "Error de conexión con el servidor";
+    }
+  }
+
+  async function abrirCamara() {
+    if (escaneando) return;
+
+    if (!("BarcodeDetector" in window)) {
+      alert("Este navegador no admite BarcodeDetector");
       return;
     }
 
-    const producto = datos.producto;
+    try {
+      detector = new BarcodeDetector({
+        formats: [
+          "ean_13", "ean_8", "code_128",
+          "code_39", "upc_a"
+        ]
+      });
 
-    resultado.textContent =
-      "SKU: " + producto.sku + "\n" +
-      "Descripción: " + producto.descripcion + "\n" +
-      "Stock disponible: " + producto.stock;
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false
+      });
 
-    resultado.style.whiteSpace = "pre-line";
+      const video = document.getElementById("video");
+      video.srcObject = stream;
+      video.style.display = "block";
 
-  } catch (error) {
-    console.error(error);
-    resultado.textContent = "Error de conexión con el servidor";
-  }
-}
+      await video.play();
 
-async function abrirCamara() {
-  if (!("BarcodeDetector" in window)) {
-    alert("Este navegador no admite BarcodeDetector");
-    return;
-  }
+      escaneando = true;
+      detectar();
 
-  try {
-    detector = new BarcodeDetector({
-      formats: ["ean_13", "ean_8", "code_128", "code_39", "upc_a"]
-    });
-
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment" },
-      audio: false
-    });
-
-    const video = document.getElementById("video");
-    video.srcObject = stream;
-    video.style.display = "block";
-    await video.play();
-
-    escaneando = true;
-    detectar();
-  } catch (error) {
-    cerrarCamara();
-    alert("Error de cámara: " + error.message);
-  }
-}
-
-async function detectar() {
-  if (!escaneando) return;
-
-  try {
-    const codigos = await detector.detect(
-      document.getElementById("video")
-    );
-
-    if (codigos.length > 0) {
-      document.getElementById("codigo").value =
-        codigos[0].rawValue;
-
+    } catch (error) {
       cerrarCamara();
-      buscar();
-      return;
+      alert("Error de cámara: " + error.message);
     }
-  } catch (error) {
-    console.log(error);
   }
 
-  if (escaneando) setTimeout(detectar, 250);
-}
+  async function detectar() {
+    if (!escaneando) return;
 
-function cerrarCamara() {
-  escaneando = false;
+    try {
+      const codigos = await detector.detect(
+        document.getElementById("video")
+      );
 
-  if (stream) {
-    stream.getTracks().forEach(track => track.stop());
-    stream = null;
+      if (codigos.length > 0) {
+        document.getElementById("codigo").value =
+          codigos[0].rawValue;
+
+        cerrarCamara();
+        buscar();
+        return;
+      }
+
+    } catch (error) {
+      console.log(error);
+    }
+
+    if (escaneando) {
+      setTimeout(detectar, 250);
+    }
   }
 
-  document.getElementById("video").style.display = "none";
-}
+  function cerrarCamara() {
+    escaneando = false;
+
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      stream = null;
+    }
+
+    document.getElementById("video")
+      .style.display = "none";
+  }
+
+  window.addEventListener("load", iniciarGoogle);
 </script>
+
+</body>
+</html>
 
 </body>
 </html>
