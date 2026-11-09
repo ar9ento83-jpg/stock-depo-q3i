@@ -91,14 +91,45 @@ function iniciarGoogle() {
   );
 }
 
-function recibirCredencial(response) {
-  // El token debe validarse en el servidor.
-  // Por ahora no habilitamos acceso al inventario.
-  document.getElementById("estadoLogin").textContent =
-    response.credential
-      ? "Google devolvió una credencial. Falta validarla."
-      : "No se pudo iniciar sesión.";
+async function recibirCredencial(response) {
+  const estado = document.getElementById("estadoLogin");
+
+  if (!response.credential) {
+    estado.textContent = "No se pudo iniciar sesión.";
+    return;
+  }
+
+  estado.textContent = "Verificando usuario...";
+
+  try {
+    const respuesta = await fetch(
+      "https://pos-depo-api-463384720815.southamerica-east1.run.app/auth",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          credential: response.credential
+        })
+      }
+    );
+
+    const datos = await respuesta.json();
+
+    if (respuesta.ok && datos.ok && datos.autorizado) {
+      estado.textContent = "Acceso autorizado - " + datos.rol;
+    } else {
+      estado.textContent =
+        "Acceso denegado: " + (datos.error || "Error desconocido");
+    }
+
+  } catch (error) {
+    console.error(error);
+    estado.textContent = "Error de conexión con POS DEPO";
+  }
 }
+
 
 window.addEventListener("load", iniciarGoogle);
 
