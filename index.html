@@ -1052,7 +1052,13 @@ function abrirOperacionExterna(modo) {
     modo === 'RECONTAR' ? 'CONFIRMAR RECUENTO' : modo === 'DEVOLVER' ? 'CONFIRMAR DEVOLUCIÓN' : 'CONFIRMAR AGREGADO';
   document.getElementById('cantidadExternaPersonalizada').min = modo === 'RECONTAR' ? '0' : '1';
   actualizarCantidadExterna();
-  document.getElementById('panelCargaExterna').classList.remove('oculto');
+  const panel = document.getElementById('panelCargaExterna');
+  panel.classList.remove('oculto');
+  // Llevar al operador directamente al formulario en el Q3i y en Windows.
+  // No enfocar el campo: evita abrir el teclado virtual antes de tiempo.
+  requestAnimationFrame(() => {
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 }
 function cerrarAgregarExterno() {
   if (guardandoExterno || pendienteExternoDatos) {
