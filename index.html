@@ -22,7 +22,6 @@
     h2 { text-align: center; }
 
     button, input, select {
-      box-sizing: border-box;
       width: 100%;
       padding: 16px;
       margin: 8px 0;
@@ -45,6 +44,11 @@
     input, select {
       border: 1px solid #cbd5dc;
       background: white;
+    }
+
+    input[readonly] {
+      background: #e9edf0;
+      color: #52616b;
     }
 
     .panel {
@@ -77,7 +81,6 @@
     }
 
     .menu .icono { font-size: 32px; }
-
     .menu .pendiente { background: #607d8b; }
 
     .menu small {
@@ -172,11 +175,9 @@
 
 <!-- MENÚ PRINCIPAL -->
 <section id="pantallaMenu" class="oculto">
-
   <p id="usuarioActual"></p>
 
   <div class="menu">
-
     <button onclick="abrirModulo('stock')">
       <span class="icono">🔎</span>
       Consultar stock
@@ -198,13 +199,11 @@
       Stock exterior
       <small>Camionetas 1 y 2</small>
     </button>
-
   </div>
 </section>
 
 <!-- CONSULTAR STOCK -->
 <section id="pantallaStock" class="oculto">
-
   <button class="secundario" onclick="volverMenu()">
     ← VOLVER AL MENÚ
   </button>
@@ -226,12 +225,10 @@
     <video id="video" autoplay playsinline></video>
     <div id="resultado">Esperando producto...</div>
   </div>
-
 </section>
 
 <!-- INGRESO DE MERCADERÍA -->
 <section id="pantallaIngreso" class="oculto">
-
   <button class="secundario" onclick="volverMenu()">
     ← VOLVER AL MENÚ
   </button>
@@ -240,15 +237,22 @@
     <h3>Ingreso de mercadería</h3>
 
     <label for="proveedorIngreso">Proveedor</label>
+    <input id="proveedorIngreso"
+           type="text"
+           placeholder="Nombre del proveedor"
+           autocomplete="off">
 
-    <select id="proveedorIngreso">
-      <option value="">-- Seleccionar proveedor --</option>
-      <option>HADA</option>
-      <option>MDA</option>
-      <option>OSAKA</option>
-      <option>CASBER</option>
-      <option>NUBO</option>
-    </select>
+    <label for="remitoIngreso">N.º de remito</label>
+    <input id="remitoIngreso"
+           type="text"
+           placeholder="Ej.: 0001-00012345"
+           autocomplete="off">
+
+    <label for="fechaIngreso">Fecha de ingreso</label>
+    <input id="fechaIngreso"
+           type="text"
+           readonly
+           tabindex="-1">
 
     <h4>Cantidad por escaneo</h4>
 
@@ -297,7 +301,6 @@
     <p id="estadoIngreso"></p>
 
     <h3 id="contadorIngreso">0 ítems diferentes</h3>
-
     <div id="listaIngreso"></div>
 
     <button class="secundario" onclick="deshacerIngreso()">
@@ -312,12 +315,10 @@
       CONFIRMAR INGRESO (PRÓXIMAMENTE)
     </button>
   </div>
-
 </section>
 
 <!-- MÓDULOS FUTUROS -->
 <section id="pantallaPendiente" class="oculto">
-
   <button class="secundario" onclick="volverMenu()">
     ← VOLVER AL MENÚ
   </button>
@@ -329,7 +330,6 @@
       Todavía no realiza operaciones sobre el inventario.
     </p>
   </div>
-
 </section>
 
 <script>
@@ -458,6 +458,7 @@ function abrirModulo(modulo) {
   }
 
   if (modulo === "ingreso") {
+    actualizarFechaIngreso();
     mostrarPantalla("pantallaIngreso");
     return;
   }
@@ -477,6 +478,21 @@ function volverMenu() {
   cerrarCamara();
   cerrarCamaraIngreso();
   mostrarPantalla("pantallaMenu");
+}
+
+// FECHA AUTOMÁTICA
+
+function actualizarFechaIngreso() {
+  const ahora = new Date();
+
+  const fecha = new Intl.DateTimeFormat("es-AR", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
+  }).format(ahora);
+
+  document.getElementById("fechaIngreso").value = fecha;
 }
 
 // CONSULTA DE STOCK
@@ -703,8 +719,8 @@ async function agregarProductoIngreso(codigo) {
     return false;
   }
 
-  if (!document.getElementById("proveedorIngreso").value) {
-    mostrarEstadoIngreso("Seleccioná un proveedor.");
+  if (!document.getElementById("proveedorIngreso").value.trim()) {
+    mostrarEstadoIngreso("Ingresá el proveedor.");
     return false;
   }
 
@@ -893,8 +909,8 @@ async function abrirCamaraIngreso() {
     return;
   }
 
-  if (!document.getElementById("proveedorIngreso").value) {
-    mostrarEstadoIngreso("Seleccioná un proveedor.");
+  if (!document.getElementById("proveedorIngreso").value.trim()) {
+    mostrarEstadoIngreso("Ingresá el proveedor.");
     return;
   }
 
@@ -1018,5 +1034,6 @@ window.addEventListener("load", () => {
 
 </body>
 </html>
+
 
 
