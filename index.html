@@ -353,10 +353,12 @@ input[readonly] { background: #e9edf0; }
     <h3 id="tituloCajonExterno"></h3>
     <p id="resultadoExterno" class="nota"></p>
     <button id="abrirCargaExterna" onclick="abrirAgregarExterno()">➕ AGREGAR MERCADERÍA</button>
-    <p class="nota">Devolver y Recontar estarán disponibles próximamente.</p>
+    <button onclick="abrirOperacionExterna('DEVOLVER')">↩️ DEVOLVER MERCADERÍA</button>
+    <button id="botonRecontarCajon" class="secundario" onclick="recontarCajonCompleto()">📋 RECONTAR CAJÓN (REINICIAR A 0)</button>
+    <p id="estadoRecuentoCajon" class="nota"></p>
   </div>
   <div id="panelCargaExterna" class="panel oculto">
-    <h3>Agregar mercadería al cajón</h3>
+    <h3 id="tituloOperacionExterna">Agregar mercadería al cajón</h3>
     <p id="destinoCargaExterna"></p>
     <h4>Cantidad por lectura</h4>
     <div id="cantidadesExternoCarga" class="cantidades">
@@ -370,11 +372,12 @@ input[readonly] { background: #e9edf0; }
     </div>
     <input id="cantidadExternaPersonalizada" class="oculto" type="number" min="1" step="1" placeholder="Cantidad personalizada">
     <p id="cantidadExternaTexto">Cada lectura suma: 1</p>
+    <p id="ayudaOperacionExterna" class="nota"></p>
     <div class="contenedor-busqueda">
       <input id="productoExternoCarga" placeholder="SKU, código de barras o descripción" autocomplete="off" oninput="programarBusquedaExternaCarga()" onkeydown="if(event.key==='Enter'){event.preventDefault();agregarManualExterno();}">
       <div id="sugerenciasExternoCarga" class="oculto"></div>
     </div>
-    <button onclick="agregarManualExterno()">AGREGAR MANUALMENTE</button>
+    <button id="botonManualExterno" onclick="agregarManualExterno()">AGREGAR MANUALMENTE</button>
     <button onclick="abrirCamaraExterna()">ESCANEAR CÓDIGO</button>
     <button class="secundario" onclick="cerrarCamaraExterna()">CERRAR CÁMARA</button>
     <video id="videoExterno" autoplay playsinline></video>
@@ -833,6 +836,7 @@ async function buscarProductoExterno() {
 }
 
 // AGREGAR STOCK EXTERNO: CARGA Y CONFIRMACIÓN
+let modoExterno = 'AGREGAR';
 let cantidadExterna = 1;
 let listaExterna = new Map();
 let historialExterno = [];
@@ -858,15 +862,89 @@ function reiniciarCargaExterna() {
   ocultarSugerenciasExternoCarga();
   renderizarCargaExterna(); estadoCargaExterna("");
 }
-function abrirAgregarExterno() {
+let recuentoPendiente = null;
+let guardandoRecuento = false;
+async function recontarCajonCompleto() {
+  if (guardandoRecuento) return;
+  if (!['ADMIN','OPERADOR'].includes(rolUsuario)) {
+    alert('No tenés permiso para recontar.'); return;
+  }
+  if (!depositoExternoActual || cajonExternoActual === null) return;
+  if (guardandoExterno || pendienteExternoDatos || listaExterna.size) {
+    alert('Primero terminá o descartá la carga pendiente de AGREGAR/DEVOLVER.'); return;
+  }
+  const estado = document.getElementById('estadoRecuentoCajon');
+  if (!recuentoPendiente) {
+    const deposito = depositosExternos.find(d => d.id === depositoExternoActual);
+    const destino = (deposito?.nombre || depositoExternoActual) +
+      ' / Cajón ' + String(cajonExternoActual).padStart(2,'0');
+    if (!confirm('¿RECONTAR '+destino+'?\n\nSe pondrán a CERO TODOS los productos del cajón y se registrará el descuento de cada uno.\nNo se modificará el STOCK principal.')) return;
+    if (!confirm('ÚLTIMA CONFIRMACIÓN: ¿REINICIAR TODO el inventario de este cajón a 0?')) return;
+    recuentoPendiente = {
+      depositoId: depositoExternoActual,
+      cajon: cajonExternoActual,
+      operacionId: crypto.randomUUID().replaceAll('-',''),
+      productos: []
+    };
+  } else if (recuentoPendiente.depositoId !== depositoExternoActual ||
+             recuentoPendiente.cajon !== cajonExternoActual) {
+    alert('Hay un recuento pendiente en otro cajón. Volvé a ese cajón para reintentarlo.');
+    return;
+  }
+  guardandoRecuento = true;
+  const boton = document.getElementById('botonRecontarCajon');
+  boton.disabled = true;
+  estado.textContent = 'Reiniciando el cajón y registrando movimientos...';
+  try {
+    const datos = await solicitarExterno('/recontar-externo', recuentoPendiente);
+    recuentoPendiente = null;
+    estado.textContent = datos.duplicado
+      ? 'El recuento ya estaba registrado; no se repitió.'
+      : 'RECUENTO COMPLETADO: '+datos.productos+' productos descontados, '+datos.unidades+' unidades. Cajón en 0.';
+    document.getElementById('resultadoExterno').textContent =
+      '0 PRODUCTOS diferentes · 0 unidades';
+  } catch (e) {
+    estado.textContent = 'No se pudo confirmar el recuento: '+e.message+
+      '. Presioná nuevamente RECONTAR para reintentar la MISMA operación.';
+  } finally {
+    guardandoRecuento = false;
+    boton.disabled = false;
+  }
+}
+function abrirAgregarExterno() { abrirOperacionExterna('AGREGAR'); }
+function abrirOperacionExterna(modo) {
+  if (modo === 'RECONTAR') { recontarCajonCompleto(); return; }
   if (!['ADMIN','OPERADOR'].includes(rolUsuario)) {
     alert('Tu usuario solo puede consultar.'); return;
   }
   if (cajonExternoActual === null || !depositoExternoActual) return;
+  if (recuentoPendiente) {
+    alert('Hay un recuento pendiente de confirmación. Reintentá primero ese recuento.'); return;
+  }
+  if (guardandoExterno || pendienteExternoDatos) {
+    estadoCargaExterna('Primero resolvé la confirmación pendiente.'); return;
+  }
+  if (listaExterna.size && modoExterno !== modo &&
+      !confirm('¿Descartar la lista actual para cambiar de operación?')) return;
+  cerrarCamaraExterna(); reiniciarCargaExterna();
+  modoExterno = modo;
   const d = depositosExternos.find(x => x.id === depositoExternoActual);
   document.getElementById('destinoCargaExterna').textContent =
     (d?.nombre || depositoExternoActual) + ' · ' +
     (cajonExternoActual === 0 ? 'Sin cajón' : 'Cajón ' + String(cajonExternoActual).padStart(2,'0'));
+  document.getElementById('tituloOperacionExterna').textContent =
+    modo === 'AGREGAR' ? 'Agregar mercadería al cajón' :
+    modo === 'DEVOLVER' ? 'Devolver mercadería al depósito principal' : 'Recontar cajón';
+  document.getElementById('ayudaOperacionExterna').textContent =
+    modo === 'RECONTAR' ? 'La cantidad indicada será el TOTAL físico que queda de cada producto. Para dejarlo en cero, elegí CUSTOM y escribí 0. Los productos no incluidos no cambian.' :
+    modo === 'DEVOLVER' ? 'La cantidad indicada se descontará de este cajón. No se modifica el stock principal.' :
+    'La cantidad indicada se sumará a este cajón.';
+  document.getElementById('botonManualExterno').textContent =
+    modo === 'RECONTAR' ? 'REGISTRAR CONTEO' : modo === 'DEVOLVER' ? 'AGREGAR A DEVOLUCIÓN' : 'AGREGAR MANUALMENTE';
+  document.getElementById('confirmarExternoCarga').textContent =
+    modo === 'RECONTAR' ? 'CONFIRMAR RECUENTO' : modo === 'DEVOLVER' ? 'CONFIRMAR DEVOLUCIÓN' : 'CONFIRMAR AGREGADO';
+  document.getElementById('cantidadExternaPersonalizada').min = modo === 'RECONTAR' ? '0' : '1';
+  actualizarCantidadExterna();
   document.getElementById('panelCargaExterna').classList.remove('oculto');
 }
 function cerrarAgregarExterno() {
@@ -888,11 +966,12 @@ function obtenerCantidadExterna() {
   const v = cantidadExterna === null ?
     Number(document.getElementById('cantidadExternaPersonalizada').value) : cantidadExterna;
   if (cantidadExterna === null && !document.getElementById('cantidadExternaPersonalizada').value.trim()) return null;
-  return Number.isSafeInteger(v) && v > 0 ? v : null;
+  return Number.isSafeInteger(v) && (modoExterno === 'RECONTAR' ? v >= 0 : v > 0) ? v : null;
 }
 function actualizarCantidadExterna() {
   const v = obtenerCantidadExterna();
-  document.getElementById('cantidadExternaTexto').textContent = v ? 'Cada lectura suma: ' + v : 'Ingresá una cantidad válida';
+  document.getElementById('cantidadExternaTexto').textContent = v !== null ?
+    (modoExterno === 'RECONTAR' ? 'Cantidad física final: ' : 'Cada lectura suma: ') + v : 'Ingresá una cantidad válida';
 }
 document.getElementById('cantidadExternaPersonalizada').addEventListener('input', actualizarCantidadExterna);
 function ocultarSugerenciasExternoCarga() {
@@ -926,14 +1005,15 @@ function programarBusquedaExternaCarga() {
 function acumularExterno(p) {
   if (pendienteExternoDatos || guardandoExterno) return false;
   const cantidad = obtenerCantidadExterna();
-  if (!cantidad) { estadoCargaExterna('Cantidad inválida.'); return false; }
+  if (cantidad === null) { estadoCargaExterna('Cantidad inválida.'); return false; }
   const clave = p.sku.trim().toUpperCase();
   const anterior = listaExterna.get(clave);
-  const total = (anterior?.cantidad || 0) + cantidad;
+  const total = modoExterno === 'RECONTAR' ? cantidad : (anterior?.cantidad || 0) + cantidad;
   if (!Number.isSafeInteger(total)) { estadoCargaExterna('Cantidad demasiado grande.'); return false; }
   listaExterna.set(clave, { sku:p.sku, descripcion:p.descripcion || p.sku, cantidad:total });
-  historialExterno.push({ clave, cantidad }); renderizarCargaExterna();
-  estadoCargaExterna(p.sku + ': +' + cantidad);
+  historialExterno.push({ clave, cantidad, anterior: anterior ? {...anterior} : null });
+  renderizarCargaExterna();
+  estadoCargaExterna(p.sku + (modoExterno === 'RECONTAR' ? ': conteo final ' : ': +') + cantidad);
   return true;
 }
 async function agregarManualExterno() {
@@ -968,7 +1048,12 @@ function deshacerExternoCarga() {
   const u=historialExterno.pop();
   if (!u) { estadoCargaExterna('No hay lecturas para deshacer.'); return; }
   const p=listaExterna.get(u.clave);
-  if (p) { p.cantidad-=u.cantidad; if (p.cantidad<=0) listaExterna.delete(u.clave); }
+  if (modoExterno === 'RECONTAR') {
+    if (u.anterior) listaExterna.set(u.clave, u.anterior);
+    else listaExterna.delete(u.clave);
+  } else if (p) {
+    p.cantidad-=u.cantidad; if (p.cantidad<=0) listaExterna.delete(u.clave);
+  }
   renderizarCargaExterna(); estadoCargaExterna('Última lectura deshecha.');
 }
 function limpiarExternoCarga() {
@@ -982,27 +1067,36 @@ async function confirmarAgregarExterno() {
     if (!listaExterna.size) { estadoCargaExterna('Agregá al menos un producto.'); return; }
     const productos=[...listaExterna.values()].map(p=>({sku:p.sku,cantidad:p.cantidad}));
     const unidades=productos.reduce((a,p)=>a+p.cantidad,0);
-    if (!confirm('¿Agregar '+unidades+' unidades de '+productos.length+' productos al cajón '+cajonExternoActual+'?\n\nSe guardará en STOCK_EXTERNO y MOVIMIENTOS_EXTERNOS.')) return;
+    const pregunta = modoExterno === 'RECONTAR' ?
+      '¿Confirmar el RECUENTO de '+productos.length+' productos del cajón '+cajonExternoActual+'?\nLas cantidades ingresadas reemplazarán las actuales.' :
+      '¿'+(modoExterno === 'DEVOLVER' ? 'Devolver' : 'Agregar')+' '+unidades+' unidades de '+productos.length+' productos del cajón '+cajonExternoActual+'?';
+    if (!confirm(pregunta+'\n\nSe modificará solo STOCK_EXTERNO y se registrará el movimiento.')) return;
     pendienteExternoId=crypto.randomUUID().replaceAll('-','');
-    pendienteExternoDatos={depositoId:depositoExternoActual,cajon:cajonExternoActual,productos};
+    pendienteExternoDatos={depositoId:depositoExternoActual,cajon:cajonExternoActual,productos,modo:modoExterno};
   }
   cerrarCamaraExterna(); ocultarSugerenciasExternoCarga(); guardandoExterno=true;
   const boton=document.getElementById('confirmarExternoCarga'); boton.disabled=true;
   boton.textContent='GUARDANDO...'; estadoCargaExterna('Guardando. No cierres la aplicación...');
   try {
-    const datos=await solicitarExterno('/agregar-externo', {
+    const ruta = pendienteExternoDatos.modo === 'RECONTAR' ? '/recontar-externo' :
+      pendienteExternoDatos.modo === 'DEVOLVER' ? '/devolver-externo' : '/agregar-externo';
+    const datos=await solicitarExterno(ruta, {
       ...pendienteExternoDatos, operacionId:pendienteExternoId
     });
     pendienteExternoDatos=null; pendienteExternoId=null;
     listaExterna.clear(); historialExterno=[]; renderizarCargaExterna();
     document.getElementById('productoExternoCarga').value='';
-    estadoCargaExterna(datos.duplicado ? 'La operación ya estaba registrada; no se duplicó.' : 'Mercadería agregada correctamente.');
+    estadoCargaExterna(datos.duplicado ? 'La operación ya estaba registrada; no se duplicó.' :
+      (modoExterno === 'RECONTAR' ? 'Recuento registrado correctamente.' :
+       modoExterno === 'DEVOLVER' ? 'Devolución registrada correctamente.' : 'Mercadería agregada correctamente.'));
     // La pantalla de cajones se actualizará al regresar.
   } catch(e) {
     estadoCargaExterna('No se pudo comprobar el guardado: '+e.message+'\nNo borres la lista. Reintentá la misma confirmación.');
   } finally {
     guardandoExterno=false; boton.disabled=false;
-    boton.textContent=pendienteExternoDatos?'REINTENTAR CONFIRMACIÓN':'CONFIRMAR AGREGADO';
+    boton.textContent=pendienteExternoDatos?'REINTENTAR CONFIRMACIÓN':
+      modoExterno === 'RECONTAR' ? 'CONFIRMAR RECUENTO' :
+      modoExterno === 'DEVOLVER' ? 'CONFIRMAR DEVOLUCIÓN' : 'CONFIRMAR AGREGADO';
   }
 }
 async function abrirCamaraExterna() {
