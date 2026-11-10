@@ -332,8 +332,16 @@ input[readonly] { background: #e9edf0; }
   <div class="panel">
     <h3 id="tituloDepositoExterno">Depósito</h3>
     <div id="resumenDepositoExterno"></div>
-    <button class="secundario" onclick="verDuplicadosExternos()">BUSCAR SKU REPETIDOS ENTRE CAJONES</button>
+    <button class="secundario" onclick="verDuplicadosExternos()">BUSCAR DUPLICADOS</button>
     <div id="resultadoDuplicadosExternos"></div>
+    <button class="secundario" onclick="alternarBusquedaExterna()">BUSCAR PRODUCTO</button>
+    <div id="busquedaProductoExterno" class="oculto">
+      <p class="nota">Buscá por SKU, código de barras o descripción. Solo se consulta esta camioneta.</p>
+      <input id="codigoProductoExterno" placeholder="Código o descripción" autocomplete="off" oninput="programarSugerenciasExternas()" onkeydown="if(event.key==='Enter') buscarProductoExterno()">
+      <div id="sugerenciasProductoExterno"></div>
+      <button onclick="buscarProductoExterno()">BUSCAR</button>
+      <div id="resultadoProductoExterno"></div>
+    </div>
     <h4>Cajones</h4>
     <div id="listaCajonesExternos" class="cajones-grid"></div>
   </div>
@@ -571,7 +579,7 @@ async function cargarDepositosExternos() {
       boton.textContent = "🚚 " + deposito.nombre;
       boton.addEventListener("click", () => abrirDepositoExterno(deposito.id));
       const detalle = document.createElement("small");
-      detalle.textContent = `${deposito.cajonesConfigurados} cajones · ${deposito.skuDiferentes} SKU · ${deposito.unidades} unidades`;
+      detalle.textContent = `${deposito.cajonesConfigurados} cajones · ${deposito.skuDiferentes} PRODUCTOS · ${deposito.unidades} unidades`;
       fila.append(boton, detalle);
       lista.appendChild(fila);
     }
@@ -587,6 +595,7 @@ async function abrirDepositoExterno(id) {
   document.getElementById("tituloDepositoExterno").textContent =
     "🚚 " + (deposito?.nombre || id);
   document.getElementById("resultadoDuplicadosExternos").replaceChildren();
+  cerrarBusquedaExterna();
   document.getElementById("listaCajonesExternos").textContent = "Cargando cajones...";
   mostrarPantalla("pantallaCajones");
   try {
@@ -611,7 +620,7 @@ async function abrirDepositoExterno(id) {
     lista.replaceChildren();
     for (const cajon of cajones) {
       const boton = document.createElement("button");
-      boton.textContent = `${String(cajon.numero).padStart(2,"0")} · ${cajon.skuDiferentes} SKU`;
+      boton.textContent = `${String(cajon.numero).padStart(2,"0")} · ${cajon.skuDiferentes} PRODUCTOS`;
       boton.title = `${cajon.unidades} unidades`;
       boton.addEventListener("click", () => abrirDetalleCajon(cajon));
       lista.appendChild(boton);
@@ -640,7 +649,7 @@ function abrirDetalleCajon(cajon) {
   document.getElementById("tituloCajonExterno").textContent =
     `${cajon.nombre || "Cajón " + cajon.numero}`;
   document.getElementById("resultadoExterno").textContent =
-    `${cajon.skuDiferentes} SKU diferentes · ${cajon.unidades} unidades`; 
+    `${cajon.skuDiferentes} PRODUCTOS diferentes · ${cajon.unidades} unidades`; 
   mostrarPantalla("pantallaDetalleCajon");
 }
 
@@ -653,7 +662,7 @@ async function verDuplicadosExternos() {
     });
     contenedor.replaceChildren();
     if (!datos.duplicados?.length) {
-      contenedor.textContent = "No hay SKU repetidos entre cajones de este depósito.";
+      contenedor.textContent = "No hay productos repetidos entre cajones de este depósito.";
       return;
     }
     for (const item of datos.duplicados) {
@@ -665,6 +674,109 @@ async function verDuplicadosExternos() {
     }
   } catch (error) {
     contenedor.textContent = error.message;
+  }
+}
+
+// BÚSQUEDA DE PRODUCTOS EN LA CAMIONETA SELECCIONADA
+let temporizadorExterno = null;
+let solicitudExterna = 0;
+let productoExternoSeleccionado = null;
+
+function cerrarBusquedaExterna() {
+  clearTimeout(temporizadorExterno);
+  solicitudExterna++;
+  productoExternoSeleccionado = null;
+  document.getElementById("busquedaProductoExterno").classList.add("oculto");
+  document.getElementById("codigoProductoExterno").value = "";
+  document.getElementById("sugerenciasProductoExterno").replaceChildren();
+  document.getElementById("resultadoProductoExterno").replaceChildren();
+}
+
+function alternarBusquedaExterna() {
+  const panel = document.getElementById("busquedaProductoExterno");
+  if (!panel.classList.contains("oculto")) {
+    cerrarBusquedaExterna();
+    return;
+  }
+  panel.classList.remove("oculto");
+  document.getElementById("codigoProductoExterno").focus();
+}
+
+function programarSugerenciasExternas() {
+  clearTimeout(temporizadorExterno);
+  const n = ++solicitudExterna;
+  productoExternoSeleccionado = null;
+  const consulta = document.getElementById("codigoProductoExterno").value.trim();
+  const lista = document.getElementById("sugerenciasProductoExterno");
+  lista.replaceChildren();
+  if (consulta.length < 2) return;
+  temporizadorExterno = setTimeout(async () => {
+    try {
+      const datos = await solicitarExterno("/buscar-productos", { busqueda: consulta });
+      if (n !== solicitudExterna) return;
+      lista.replaceChildren();
+      for (const p of datos.productos || []) {
+        const boton = document.createElement("button");
+        boton.className = "sugerencia";
+        boton.textContent = p.sku + " · " + p.descripcion;
+        boton.onclick = () => {
+          productoExternoSeleccionado = p.sku;
+          document.getElementById("codigoProductoExterno").value = p.sku;
+          lista.replaceChildren();
+          clearTimeout(temporizadorExterno);
+          solicitudExterna++;
+          buscarProductoExterno();
+        };
+        lista.appendChild(boton);
+      }
+    } catch (error) {
+      if (n === solicitudExterna) lista.textContent = error.message;
+    }
+  }, 300);
+}
+
+async function buscarProductoExterno() {
+  const codigo = (productoExternoSeleccionado ||
+    document.getElementById("codigoProductoExterno").value).trim();
+  const resultado = document.getElementById("resultadoProductoExterno");
+  const depositoId = depositoExternoActual;
+  resultado.replaceChildren();
+  if (!codigo) {
+    resultado.textContent = "Ingresá un producto.";
+    return;
+  }
+  resultado.textContent = "Buscando producto...";
+  try {
+    const datos = await solicitarExterno("/stock", { codigo });
+    if (depositoId !== depositoExternoActual) return;
+    const producto = datos.producto;
+    const deposito = (producto.depositosExternos || []).find(d => d.id === depositoId);
+    const cajones = deposito?.cajones || [];
+    resultado.replaceChildren();
+    const titulo = document.createElement("h4");
+    titulo.textContent = producto.descripcion || producto.sku;
+    const identificador = document.createElement("p");
+    identificador.textContent = "Código: " + producto.sku;
+    resultado.append(titulo, identificador);
+    if (!cajones.length) {
+      const aviso = document.createElement("p");
+      aviso.textContent = "Este producto no tiene existencias registradas en esta camioneta.";
+      resultado.appendChild(aviso);
+      return;
+    }
+    for (const c of cajones) {
+      const fila = document.createElement("div");
+      fila.className = "externo-fila";
+      fila.textContent = (c.numero === 0 ? "Sin cajón asignado" :
+        "Cajón " + String(c.numero).padStart(2, "0")) +
+        " · " + c.cantidad + " unidades";
+      resultado.appendChild(fila);
+    }
+    const total = document.createElement("p");
+    total.textContent = "Total en esta camioneta: " + deposito.cantidad + " unidades";
+    resultado.appendChild(total);
+  } catch (error) {
+    resultado.textContent = error.message;
   }
 }
 
@@ -1660,7 +1772,6 @@ window.addEventListener("load", () => {
 </script>
 </body>
 </html>
-
 
 
 
