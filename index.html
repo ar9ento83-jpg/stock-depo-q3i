@@ -452,20 +452,22 @@ select {
     }
   }
 
-  function mostrarPantalla(id) {
-    [
-      "pantallaMenu",
-      "pantallaStock",
-      "pantallaPendiente"
-      "PantallaIngreso"
-    ].forEach(pantalla => {
-      document.getElementById(pantalla)
-        .classList.add("oculto");
-    });
+ 
+function mostrarPantalla(id) {
+  [
+    "pantallaMenu",
+    "pantallaStock",
+    "pantallaIngreso",
+    "pantallaPendiente"
+  ].forEach(pantalla => {
+    document.getElementById(pantalla)
+      .classList.add("oculto");
+  });
 
-    document.getElementById(id)
-      .classList.remove("oculto");
-  }
+  document.getElementById(id)
+    .classList.remove("oculto");
+}
+
 
   function abrirModulo(modulo) {
     if (!credencialGoogle) {
