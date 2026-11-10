@@ -323,6 +323,7 @@ input[readonly] { background: #e9edf0; }
   <div class="panel">
     <h3>🚚 Stock externo</h3>
     <p class="nota">Seleccioná un depósito para ver sus cajones.</p>
+    <button id="botonConfigExterna" class="secundario oculto" onclick="abrirConfigExterna()">⚙️ CONFIGURACIÓN (ADMIN)</button>
     <div id="listaDepositosExternos">Cargando depósitos...</div>
   </div>
 </section>
@@ -393,6 +394,38 @@ input[readonly] { background: #e9edf0; }
     <button class="secundario" onclick="limpiarExternoCarga()">LIMPIAR LISTA</button>
     <button id="confirmarExternoCarga" onclick="confirmarAgregarExterno()">CONFIRMAR AGREGADO</button>
     <button class="secundario" onclick="cerrarAgregarExterno()">CERRAR CARGA</button>
+  </div>
+</section>
+
+<section id="pantallaConfigExterna" class="oculto">
+  <button class="secundario" onclick="abrirModulo('exterior')">← VOLVER A STOCK EXTERNO</button>
+  <div class="panel">
+    <h3>⚙️ Configuración de camionetas y cajones</h3>
+    <p class="nota">Solo ADMIN. Los movimientos y el stock principal nunca se borran.</p>
+    <p id="estadoConfigExterna" class="nota"></p>
+    <h4>Camionetas</h4>
+    <div id="listaConfigDepositos"></div>
+    <h4>Agregar camioneta</h4>
+    <input id="configNuevoId" placeholder="ID único, ej. EXT003" autocomplete="off">
+    <input id="configNuevoNombre" placeholder="Nombre de camioneta" autocomplete="off">
+    <input id="configNuevoTotal" type="number" min="0" max="300" placeholder="Cantidad inicial de cajones">
+    <button onclick="crearDepositoConfig()">AGREGAR CAMIONETA</button>
+  </div>
+  <div id="panelConfigDeposito" class="panel oculto">
+    <h3 id="tituloConfigDeposito"></h3>
+    <label>Nombre</label><input id="configNombreDeposito" autocomplete="off">
+    <label><input id="configActivoDeposito" type="checkbox" style="width:auto"> Camioneta activa</label>
+    <button onclick="guardarDepositoConfig()">GUARDAR CAMIONETA</button>
+    <h4>Cantidad total de cajones</h4>
+    <input id="configTotalCajones" type="number" min="0" max="300">
+    <button onclick="guardarTotalCajonesConfig()">ACTUALIZAR CANTIDAD DE CAJONES</button>
+    <h4>Editar cajón individual</h4>
+    <label>Número de cajón</label>
+    <select id="configNumeroCajon" onchange="cargarCajonConfig()" style="width:100%;padding:14px;font-size:17px"></select>
+    <input id="configNombreCajon" placeholder="Nombre del cajón" autocomplete="off">
+    <label><input id="configActivoCajon" type="checkbox" style="width:auto"> Cajón activo</label>
+    <button onclick="guardarCajonConfig()">GUARDAR CAJÓN</button>
+    <p class="nota">Para agregar varios cajones, aumentá la cantidad total. Para agregar uno, aumentala en 1. No se permite desactivar cajones con mercadería.</p>
   </div>
 </section>
 
@@ -541,6 +574,7 @@ function mostrarPantalla(id) {
     "pantallaExterno",
     "pantallaCajones",
     "pantallaDetalleCajon",
+    "pantallaConfigExterna",
     "pantallaPendiente"
   ].forEach(pantalla => {
     document.getElementById(pantalla)
@@ -620,6 +654,7 @@ async function cargarDepositosExternos() {
     const datos = await solicitarExterno("/depositos-externos");
     depositosExternos = datos.depositos || [];
     lista.replaceChildren();
+    document.getElementById("botonConfigExterna").classList.toggle("oculto",rolUsuario!=="ADMIN");
     if (!depositosExternos.length) {
       lista.textContent = "No hay depósitos externos activos.";
       return;
@@ -653,19 +688,21 @@ async function abrirDepositoExterno(id) {
   try {
     const datos = await solicitarExterno("/cajones-externos", { depositoId: id });
     if (depositoExternoActual !== id) return;
+    const inactivos = new Set((datos.cajonesInactivos || []).map(Number));
     const configurados = new Map((datos.cajones || []).map(c => [Number(c.numero), c]));
     // Se generan los cajones hasta el número configurado en el depósito.
     // Los registros explícitos de CAJONES_EXTERNOS prevalecen.
     const total = Math.max(0, Number(deposito?.cajonesConfigurados) || 0);
     const cajones = [];
     for (let numero = 1; numero <= total; numero++) {
+      if (inactivos.has(numero)) continue;
       cajones.push(configurados.get(numero) || {
         numero, nombre: "CAJON " + String(numero).padStart(2, "0"),
         skuDiferentes: 0, unidades: 0
       });
     }
     for (const c of configurados.values()) {
-      if (c.numero > total) cajones.push(c);
+      if (c.numero > total && c.activo) cajones.push(c);
     }
     cajonesExternosActuales = cajones;
     const lista = document.getElementById("listaCajonesExternos");
@@ -2205,6 +2242,88 @@ function cerrarCamaraIngreso() {
 
   video.style.display = "none";
   video.srcObject = null;
+}
+
+// CONFIGURACIÓN ADMINISTRATIVA (no modifica STOCK principal).
+let configExterna = {depositos:[],cajones:[]};
+let configDepositoId = null;
+function mensajeConfigExterna(m) { document.getElementById('estadoConfigExterna').textContent=m; }
+async function abrirConfigExterna() {
+  if (rolUsuario!=='ADMIN') return;
+  mostrarPantalla('pantallaConfigExterna');
+  await refrescarConfigExterna();
+}
+async function refrescarConfigExterna() {
+  mensajeConfigExterna('Cargando configuración...');
+  try {
+    configExterna=await solicitarExterno('/config-externos');
+    const lista=document.getElementById('listaConfigDepositos'); lista.replaceChildren();
+    for (const d of configExterna.depositos) {
+      const b=document.createElement('button'); b.className='secundario';
+      b.textContent=(d.activo?'🟢 ':'⚪ ')+d.nombre+' · '+d.id+' · '+d.cajones+' cajones';
+      b.onclick=()=>seleccionarDepositoConfig(d.id); lista.appendChild(b);
+    }
+    if (configDepositoId && configExterna.depositos.some(d=>d.id===configDepositoId))
+      seleccionarDepositoConfig(configDepositoId);
+    mensajeConfigExterna('');
+  } catch(e) {mensajeConfigExterna('Error: '+e.message);}
+}
+function seleccionarDepositoConfig(id) {
+  configDepositoId=id;
+  const d=configExterna.depositos.find(x=>x.id===id); if(!d)return;
+  document.getElementById('panelConfigDeposito').classList.remove('oculto');
+  document.getElementById('tituloConfigDeposito').textContent='🚚 '+d.nombre+' ('+d.id+')';
+  document.getElementById('configNombreDeposito').value=d.nombre;
+  document.getElementById('configActivoDeposito').checked=d.activo;
+  document.getElementById('configTotalCajones').value=d.cajones;
+  const select=document.getElementById('configNumeroCajon'); select.replaceChildren();
+  for(let n=1;n<=d.cajones;n++) {
+    const o=document.createElement('option'); o.value=n; o.textContent='Cajón '+String(n).padStart(2,'0'); select.appendChild(o);
+  }
+  cargarCajonConfig();
+}
+function cargarCajonConfig() {
+  const n=Number(document.getElementById('configNumeroCajon').value);
+  const c=configExterna.cajones.find(x=>x.depositoId===configDepositoId && x.numero===n);
+  document.getElementById('configNombreCajon').value=c?.nombre||('CAJON '+String(n).padStart(2,'0'));
+  document.getElementById('configActivoCajon').checked=c?c.activo:true;
+}
+async function guardarConfigExterna(datos) {
+  try {
+    mensajeConfigExterna('Guardando...');
+    await solicitarExterno('/guardar-config-externos',datos);
+    await refrescarConfigExterna();
+    mensajeConfigExterna('Configuración guardada correctamente.');
+  } catch(e) {mensajeConfigExterna('No se guardó: '+e.message);}
+}
+function crearDepositoConfig() {
+  const depositoId=document.getElementById('configNuevoId').value.trim().toUpperCase();
+  const nombre=document.getElementById('configNuevoNombre').value.trim();
+  const total=Number(document.getElementById('configNuevoTotal').value);
+  if(!depositoId||!nombre||!document.getElementById('configNuevoTotal').value.trim()) return mensajeConfigExterna('Completá los tres datos.');
+  if(!confirm('¿Crear camioneta '+nombre+' con '+total+' cajones?'))return;
+  guardarConfigExterna({accion:'crear-deposito',depositoId,nombre,total});
+}
+function guardarDepositoConfig() {
+  const nombre=document.getElementById('configNombreDeposito').value.trim();
+  const activo=document.getElementById('configActivoDeposito').checked;
+  if(!confirm('¿Guardar cambios de camioneta '+configDepositoId+'?'))return;
+  guardarConfigExterna({accion:'editar-deposito',depositoId:configDepositoId,nombre,activo});
+}
+function guardarTotalCajonesConfig() {
+  const campo=document.getElementById('configTotalCajones');
+  if(!campo.value.trim())return mensajeConfigExterna('Ingresá la cantidad de cajones.');
+  const total=Number(campo.value);
+  if(!confirm('¿Cambiar a '+total+' cajones? Los cajones fuera del nuevo total quedarán desactivados, sin borrar el historial.'))return;
+  guardarConfigExterna({accion:'total-cajones',depositoId:configDepositoId,total});
+}
+function guardarCajonConfig() {
+  const numero=Number(document.getElementById('configNumeroCajon').value);
+  const nombre=document.getElementById('configNombreCajon').value.trim();
+  const activo=document.getElementById('configActivoCajon').checked;
+  if(!numero)return mensajeConfigExterna('Seleccioná un cajón.');
+  if(!confirm('¿Guardar cajón '+numero+' de '+configDepositoId+'?'))return;
+  guardarConfigExterna({accion:'editar-cajon',depositoId:configDepositoId,numero,nombre,activo});
 }
 
 // INICIALIZACIÓN GOOGLE
