@@ -2,167 +2,129 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>POS DEPO</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>POS DEPO</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
-
-  <style>
-    * { box-sizing: border-box; }
-
-    body {
-      font-family: Arial, sans-serif;
-      background: #f2f4f7;
-      color: #263238;
-      margin: 0;
-      padding: 16px;
-    }
-
-    h2 { text-align: center; }
-
-    button, input, select {
-      width: 100%;
-      padding: 16px;
-      margin: 8px 0;
-      font-size: 18px;
-      border-radius: 10px;
-    }
-
-    button {
-      background: #176b40;
-      color: white;
-      border: none;
-      cursor: pointer;
-    }
-
-    button:disabled {
-      background: #aab2b8;
-      cursor: default;
-    }
-
-    input, select {
-      border: 1px solid #cbd5dc;
-      background: white;
-    }
-
-    input[readonly] {
-      background: #e9edf0;
-      color: #52616b;
-    }
-
-    .panel {
-      background: white;
-      border-radius: 14px;
-      padding: 16px;
-      margin: 12px 0;
-    }
-
-    .oculto { display: none !important; }
-
-    .menu {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-      margin-top: 18px;
-    }
-
-    .menu button {
-      min-height: 125px;
-      margin: 0;
-      padding: 14px 8px;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      gap: 9px;
-      font-size: 16px;
-      font-weight: bold;
-    }
-
-    .menu .icono { font-size: 32px; }
-    .menu .pendiente { background: #607d8b; }
-
-    .menu small {
-      font-size: 11px;
-      font-weight: normal;
-    }
-
-    .secundario { background: #52616b; }
-
-    #video, #videoIngreso {
-      width: 100%;
-      display: none;
-      border-radius: 12px;
-      margin-top: 10px;
-    }
-
-    #resultado {
-      background: #f2f4f7;
-      padding: 16px;
-      margin-top: 15px;
-      border-radius: 10px;
-      white-space: pre-line;
-      min-height: 55px;
-    }
-
-    #usuarioActual {
-      font-size: 14px;
-      text-align: center;
-      color: #176b40;
-      font-weight: bold;
-    }
-
-    .nota {
-      font-size: 13px;
-      color: #607d8b;
-    }
-
-    .cantidades {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 7px;
-    }
-
-    .cantidades button {
-      padding: 13px 3px;
-      margin: 0;
-      font-size: 15px;
-      background: #607d8b;
-    }
-
-    .cantidades .cantidad-activa {
-      background: #176b40;
-      outline: 3px solid #a5d6a7;
-    }
-
-    .fila-ingreso {
-      background: #f2f4f7;
-      padding: 12px;
-      margin: 7px 0;
-      border-radius: 9px;
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-    }
-
-    .fila-ingreso strong { font-size: 19px; }
-
-    .fila-ingreso small {
-      display: block;
-      margin-top: 5px;
-      color: #607d8b;
-    }
-
-    #estadoIngreso {
-      min-height: 20px;
-      color: #176b40;
-    }
-  </style>
+<style>
+* { box-sizing: border-box; }
+body {
+  font-family: Arial, sans-serif;
+  background: #f2f4f7;
+  color: #263238;
+  margin: 0;
+  padding: 16px;
+}
+h2 { text-align: center; }
+button, input {
+  width: 100%;
+  padding: 16px;
+  margin: 8px 0;
+  font-size: 18px;
+  border-radius: 10px;
+}
+button {
+  background: #176b40;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+button:disabled { background: #aab2b8; }
+input {
+  border: 1px solid #cbd5dc;
+  background: white;
+}
+input[readonly] { background: #e9edf0; }
+.panel {
+  background: white;
+  border-radius: 14px;
+  padding: 16px;
+  margin: 12px 0;
+}
+.oculto { display: none !important; }
+.menu {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+.menu button {
+  min-height: 125px;
+  margin: 0;
+  padding: 14px 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 9px;
+  font-size: 16px;
+  font-weight: bold;
+}
+.menu .icono { font-size: 32px; }
+.menu .pendiente { background: #607d8b; }
+.menu small { font-size: 11px; font-weight: normal; }
+.secundario { background: #52616b; }
+#video, #videoIngreso {
+  width: 100%;
+  display: none;
+  border-radius: 12px;
+  margin-top: 10px;
+}
+#resultado {
+  background: #f2f4f7;
+  padding: 16px;
+  margin-top: 15px;
+  border-radius: 10px;
+  white-space: pre-line;
+  min-height: 55px;
+}
+#usuarioActual {
+  font-size: 14px;
+  text-align: center;
+  color: #176b40;
+  font-weight: bold;
+}
+.nota { font-size: 13px; color: #607d8b; }
+.cantidades {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+}
+.cantidades button {
+  padding: 13px 3px;
+  margin: 0;
+  font-size: 15px;
+  background: #607d8b;
+}
+.cantidades .cantidad-activa {
+  background: #176b40;
+  outline: 3px solid #a5d6a7;
+}
+.fila-ingreso {
+  background: #f2f4f7;
+  padding: 12px;
+  margin: 7px 0;
+  border-radius: 9px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.fila-ingreso strong { font-size: 19px; }
+.fila-ingreso small {
+  display: block;
+  margin-top: 5px;
+  color: #607d8b;
+}
+#estadoIngreso {
+  min-height: 20px;
+  color: #176b40;
+  white-space: pre-line;
+}
+</style>
 </head>
 
 <body>
-
 <h2>POS DEPO</h2>
 
 <!-- INICIO DE SESIÓN -->
@@ -176,24 +138,20 @@
 <!-- MENÚ PRINCIPAL -->
 <section id="pantallaMenu" class="oculto">
   <p id="usuarioActual"></p>
-
   <div class="menu">
     <button onclick="abrirModulo('stock')">
       <span class="icono">🔎</span>
       Consultar stock
     </button>
-
     <button onclick="abrirModulo('ingreso')">
       <span class="icono">📦</span>
       Ingreso de mercadería
     </button>
-
     <button class="pendiente" onclick="abrirModulo('pedidos')">
       <span class="icono">📋</span>
       Armado de pedidos
       <small>Próximamente</small>
     </button>
-
     <button class="pendiente" onclick="abrirModulo('exterior')">
       <span class="icono">🚚</span>
       Stock exterior
@@ -207,21 +165,16 @@
   <button class="secundario" onclick="volverMenu()">
     ← VOLVER AL MENÚ
   </button>
-
   <div class="panel">
     <h3>Consultar stock</h3>
-
     <input id="codigo"
-           placeholder="SKU o código de barras"
-           autocomplete="off">
-
+      placeholder="SKU o código de barras"
+      autocomplete="off">
     <button onclick="buscar()">BUSCAR</button>
     <button onclick="abrirCamara()">ESCANEAR</button>
-
     <button class="secundario" onclick="cerrarCamara()">
       CERRAR CÁMARA
     </button>
-
     <video id="video" autoplay playsinline></video>
     <div id="resultado">Esperando producto...</div>
   </div>
@@ -232,33 +185,27 @@
   <button class="secundario" onclick="volverMenu()">
     ← VOLVER AL MENÚ
   </button>
-
   <div class="panel">
     <h3>Ingreso de mercadería</h3>
 
     <label for="proveedorIngreso">Proveedor</label>
-    <input id="proveedorIngreso"
-           type="text"
-           placeholder="Nombre del proveedor"
-           autocomplete="off">
+    <input id="proveedorIngreso" type="text"
+      placeholder="Nombre del proveedor"
+      autocomplete="off">
 
     <label for="remitoIngreso">N.º de remito</label>
-    <input id="remitoIngreso"
-           type="text"
-           placeholder="Ej.: 0001-00012345"
-           autocomplete="off">
+    <input id="remitoIngreso" type="text"
+      placeholder="Ej.: 0001-00012345"
+      autocomplete="off">
 
     <label for="fechaIngreso">Fecha de ingreso</label>
-    <input id="fechaIngreso"
-           type="text"
-           readonly
-           tabindex="-1">
+    <input id="fechaIngreso" type="text"
+      readonly tabindex="-1">
 
     <h4>Cantidad por escaneo</h4>
-
     <div id="cantidadesIngreso" class="cantidades">
       <button class="cantidad-activa"
-              onclick="seleccionarCantidad(1,this)">1</button>
+        onclick="seleccionarCantidad(1,this)">1</button>
       <button onclick="seleccionarCantidad(2,this)">2</button>
       <button onclick="seleccionarCantidad(5,this)">5</button>
       <button onclick="seleccionarCantidad(10,this)">10</button>
@@ -269,35 +216,29 @@
       </button>
     </div>
 
-    <input id="cantidadPersonalizada"
-           type="number"
-           min="1"
-           step="1"
-           placeholder="Cantidad personalizada"
-           class="oculto">
+    <input id="cantidadPersonalizada" type="number"
+      min="1" step="1"
+      placeholder="Cantidad personalizada"
+      class="oculto">
 
     <p id="cantidadActual">Cada lectura suma: 1</p>
 
     <h4>Agregar producto</h4>
-
     <input id="productoIngreso"
-           placeholder="SKU, código o nombre del producto"
-           autocomplete="off">
+      placeholder="SKU o código de barras"
+      autocomplete="off">
 
     <button onclick="agregarManual()">
       AGREGAR MANUALMENTE
     </button>
-
     <button onclick="abrirCamaraIngreso()">
       ESCANEAR CÓDIGO
     </button>
-
     <button class="secundario" onclick="cerrarCamaraIngreso()">
       CERRAR CÁMARA
     </button>
 
     <video id="videoIngreso" autoplay playsinline></video>
-
     <p id="estadoIngreso"></p>
 
     <h3 id="contadorIngreso">0 ítems diferentes</h3>
@@ -306,13 +247,12 @@
     <button class="secundario" onclick="deshacerIngreso()">
       DESHACER ÚLTIMO
     </button>
-
     <button class="secundario" onclick="limpiarIngreso()">
       LIMPIAR LISTA
     </button>
-
-    <button disabled>
-      CONFIRMAR INGRESO (PRÓXIMAMENTE)
+    <button id="botonConfirmarIngreso"
+      onclick="confirmarIngreso()">
+      CONFIRMAR INGRESO
     </button>
   </div>
 </section>
@@ -322,7 +262,6 @@
   <button class="secundario" onclick="volverMenu()">
     ← VOLVER AL MENÚ
   </button>
-
   <div class="panel">
     <h3 id="tituloPendiente"></h3>
     <p>Este módulo está pendiente de desarrollo.</p>
@@ -357,6 +296,10 @@ let codigoAnteriorIngreso = null;
 let ausenciasIngreso = 0;
 let procesandoIngreso = false;
 
+let confirmandoIngreso = false;
+let operacionPendienteId = null;
+let operacionPendienteDatos = null;
+
 // AUTENTICACIÓN GOOGLE
 
 function iniciarGoogle() {
@@ -388,9 +331,7 @@ async function recibirCredencial(response) {
   try {
     const respuesta = await fetch(API + "/auth", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         credential: response.credential
       })
@@ -409,21 +350,31 @@ async function recibirCredencial(response) {
         .classList.add("oculto");
 
       mostrarPantalla("pantallaMenu");
-
     } else {
       credencialGoogle = null;
       rolUsuario = null;
-
       estado.textContent =
         "Acceso denegado: " +
         (datos.error || "Error desconocido");
     }
-
   } catch (error) {
     console.error(error);
-    estado.textContent =
-      "Error de conexión con POS DEPO";
+    estado.textContent = "Error de conexión con POS DEPO";
   }
+}
+
+function sesionVencida() {
+  credencialGoogle = null;
+  rolUsuario = null;
+  cerrarCamara();
+  cerrarCamaraIngreso();
+  mostrarPantalla("pantallaMenu");
+  document.getElementById("pantallaMenu")
+    .classList.add("oculto");
+  document.getElementById("login")
+    .classList.remove("oculto");
+  document.getElementById("estadoLogin").textContent =
+    "Sesión vencida. Iniciá sesión nuevamente.";
 }
 
 // NAVEGACIÓN
@@ -483,19 +434,32 @@ function volverMenu() {
 // FECHA AUTOMÁTICA
 
 function actualizarFechaIngreso() {
-  const ahora = new Date();
-
   const fecha = new Intl.DateTimeFormat("es-AR", {
     timeZone: "America/Argentina/Buenos_Aires",
     day: "2-digit",
     month: "2-digit",
     year: "numeric"
-  }).format(ahora);
+  }).format(new Date());
 
   document.getElementById("fechaIngreso").value = fecha;
 }
 
 // CONSULTA DE STOCK
+
+async function consultarProducto(codigo) {
+  const respuesta = await fetch(API + "/stock", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      credential: credencialGoogle,
+      codigo
+    })
+  });
+
+  const datos = await respuesta.json();
+
+  return { respuesta, datos };
+}
 
 async function buscar() {
   const codigo =
@@ -510,47 +474,22 @@ async function buscar() {
   }
 
   if (!credencialGoogle) {
-    resultado.textContent =
-      "Primero iniciá sesión con Google";
+    resultado.textContent = "Primero iniciá sesión con Google";
     return;
   }
 
   resultado.textContent = "Buscando producto...";
 
   try {
-    const respuesta = await fetch(API + "/stock", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        credential: credencialGoogle,
-        codigo
-      })
-    });
-
-    const datos = await respuesta.json();
+    const { respuesta, datos } =
+      await consultarProducto(codigo);
 
     if (!respuesta.ok || !datos.ok) {
       if (respuesta.status === 401) {
-        credencialGoogle = null;
-        rolUsuario = null;
-
-        cerrarCamara();
-        cerrarCamaraIngreso();
-
-        mostrarPantalla("pantallaMenu");
-        document.getElementById("pantallaMenu")
-          .classList.add("oculto");
-        document.getElementById("login")
-          .classList.remove("oculto");
-
-        resultado.textContent =
-          "Sesión vencida. Iniciá sesión nuevamente.";
-      } else {
-        resultado.textContent =
-          datos.error || "Error al buscar";
+        sesionVencida();
       }
+      resultado.textContent =
+        datos.error || "Error al buscar";
       return;
     }
 
@@ -594,7 +533,6 @@ async function abrirCamara() {
     const video = document.getElementById("video");
     video.srcObject = stream;
     video.style.display = "block";
-
     await video.play();
 
     escaneando = true;
@@ -622,7 +560,6 @@ async function detectar() {
       buscar();
       return;
     }
-
   } catch (error) {
     console.error(error);
   }
@@ -671,8 +608,10 @@ function obtenerCantidadIngreso() {
   const personalizada =
     document.getElementById("cantidadPersonalizada");
 
-  if (cantidadIngreso === null &&
-      personalizada.value.trim() === "") {
+  if (
+    cantidadIngreso === null &&
+    personalizada.value.trim() === ""
+  ) {
     return null;
   }
 
@@ -702,7 +641,7 @@ function mostrarEstadoIngreso(mensaje) {
     mensaje;
 }
 
-// INGRESO MANUAL
+// AGREGAR PRODUCTOS
 
 async function agregarManual() {
   const campo = document.getElementById("productoIngreso");
@@ -714,12 +653,20 @@ async function agregarManual() {
 }
 
 async function agregarProductoIngreso(codigo) {
+  if (confirmandoIngreso || operacionPendienteDatos) {
+    mostrarEstadoIngreso(
+      "Primero resolvé la confirmación pendiente."
+    );
+    return false;
+  }
+
   if (!credencialGoogle) {
     mostrarEstadoIngreso("Primero iniciá sesión.");
     return false;
   }
 
-  if (!document.getElementById("proveedorIngreso").value.trim()) {
+  if (!document.getElementById("proveedorIngreso")
+      .value.trim()) {
     mostrarEstadoIngreso("Ingresá el proveedor.");
     return false;
   }
@@ -742,27 +689,15 @@ async function agregarProductoIngreso(codigo) {
   mostrarEstadoIngreso("Buscando producto...");
 
   try {
-    const respuesta = await fetch(API + "/stock", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        credential: credencialGoogle,
-        codigo
-      })
-    });
-
-    const datos = await respuesta.json();
+    const { respuesta, datos } =
+      await consultarProducto(codigo);
 
     if (!respuesta.ok || !datos.ok) {
       if (respuesta.status === 401) {
-        credencialGoogle = null;
-        cerrarCamaraIngreso();
-
         mostrarEstadoIngreso(
           "Sesión vencida. Volvé a iniciar sesión."
         );
+        sesionVencida();
         return false;
       }
 
@@ -773,18 +708,33 @@ async function agregarProductoIngreso(codigo) {
         return false;
       }
 
-      // Producto nuevo, pendiente de identificar.
-      const nombre = codigo.trim();
-      const clave = "NUEVO:" + nombre.toUpperCase();
+      // PRODUCTO NUEVO
+      const skuNuevo = codigo.trim();
+
+      const descripcion = prompt(
+        "El SKU " + skuNuevo +
+        " no figura en PARAMETROS ni en STOCK.\n" +
+        "Ingresá su descripción:"
+      );
+
+      if (!descripcion || !descripcion.trim()) {
+        mostrarEstadoIngreso(
+          "El producto nuevo necesita una descripción."
+        );
+        return false;
+      }
+
+      const clave = "SKU:" + skuNuevo.toUpperCase();
 
       acumularIngreso(clave, {
-        sku: "",
-        descripcion: nombre,
+        sku: skuNuevo,
+        codigoBarras: skuNuevo,
+        descripcion: descripcion.trim(),
         nuevo: true
       }, cantidad);
 
       mostrarEstadoIngreso(
-        "Producto nuevo agregado, pendiente de identificar."
+        "Producto nuevo agregado: " + skuNuevo
       );
 
       return true;
@@ -795,7 +745,8 @@ async function agregarProductoIngreso(codigo) {
 
     acumularIngreso(clave, {
       sku: producto.sku,
-      descripcion: producto.descripcion,
+      codigoBarras: codigo,
+      descripcion: producto.descripcion || producto.sku,
       nuevo: false
     }, cantidad);
 
@@ -815,13 +766,20 @@ async function agregarProductoIngreso(codigo) {
   }
 }
 
-// ACUMULAR PRODUCTOS
+// ACUMULAR PRODUCTOS POR SKU
 
 function acumularIngreso(clave, producto, cantidad) {
   const anterior = listaMercaderia.get(clave);
 
   if (anterior) {
-    anterior.cantidad += cantidad;
+    const total = anterior.cantidad + cantidad;
+
+    if (!Number.isSafeInteger(total)) {
+      mostrarEstadoIngreso("Cantidad acumulada demasiado grande.");
+      return;
+    }
+
+    anterior.cantidad = total;
   } else {
     listaMercaderia.set(clave, {
       ...producto,
@@ -851,7 +809,7 @@ function renderizarIngreso() {
 
     const sku = document.createElement("small");
     sku.textContent = producto.nuevo
-      ? "NUEVO - Pendiente de identificar"
+      ? producto.sku + " (nuevo)"
       : producto.sku;
 
     info.append(nombre, sku);
@@ -867,6 +825,13 @@ function renderizarIngreso() {
 // DESHACER Y LIMPIAR
 
 function deshacerIngreso() {
+  if (confirmandoIngreso || operacionPendienteDatos) {
+    mostrarEstadoIngreso(
+      "Primero resolvé la confirmación pendiente."
+    );
+    return;
+  }
+
   const ultimo = historialIngreso.pop();
 
   if (!ultimo) {
@@ -875,7 +840,6 @@ function deshacerIngreso() {
   }
 
   const producto = listaMercaderia.get(ultimo.clave);
-
   if (!producto) return;
 
   producto.cantidad -= ultimo.cantidad;
@@ -889,6 +853,13 @@ function deshacerIngreso() {
 }
 
 function limpiarIngreso() {
+  if (confirmandoIngreso || operacionPendienteDatos) {
+    mostrarEstadoIngreso(
+      "Primero resolvé la confirmación pendiente."
+    );
+    return;
+  }
+
   if (!confirm("¿Eliminar toda la lista de ingreso?")) {
     return;
   }
@@ -899,9 +870,207 @@ function limpiarIngreso() {
   mostrarEstadoIngreso("Lista vaciada.");
 }
 
+// CONFIRMAR REMITO
+// ÚNICAMENTE GUARDA EN INGRESOS, NO MODIFICA STOCK
+
+async function confirmarIngreso() {
+  if (confirmandoIngreso) return;
+
+  if (!credencialGoogle) {
+    mostrarEstadoIngreso("Primero iniciá sesión.");
+    return;
+  }
+
+  if (rolUsuario !== "ADMIN" &&
+      rolUsuario !== "OPERADOR") {
+    mostrarEstadoIngreso(
+      "Tu usuario no tiene permiso para confirmar ingresos."
+    );
+    return;
+  }
+
+  if (procesandoIngreso) {
+    mostrarEstadoIngreso(
+      "Esperá a que termine de agregarse el producto."
+    );
+    return;
+  }
+
+  if (!operacionPendienteDatos) {
+    const proveedor = document
+      .getElementById("proveedorIngreso").value.trim();
+
+    const remito = document
+      .getElementById("remitoIngreso").value.trim();
+
+    if (!proveedor || !remito) {
+      mostrarEstadoIngreso(
+        "Completá proveedor y número de remito."
+      );
+      return;
+    }
+
+    if (listaMercaderia.size === 0) {
+      mostrarEstadoIngreso(
+        "Agregá al menos un producto."
+      );
+      return;
+    }
+
+    const productos =
+      Array.from(listaMercaderia.values()).map(p => ({
+        sku: p.sku,
+        codigoBarras: p.codigoBarras || p.sku,
+        descripcion: p.descripcion,
+        cantidad: p.cantidad
+      }));
+
+    if (productos.some(p =>
+      !p.sku ||
+      !p.descripcion ||
+      !Number.isSafeInteger(p.cantidad) ||
+      p.cantidad <= 0
+    )) {
+      mostrarEstadoIngreso(
+        "Hay productos con datos incompletos."
+      );
+      return;
+    }
+
+    const total = productos.reduce(
+      (suma, p) => suma + p.cantidad, 0
+    );
+
+    const aprobado = confirm(
+      "¿Confirmar remito " + remito +
+      " de " + proveedor + "?\n\n" +
+      productos.length + " productos diferentes\n" +
+      total + " unidades\n\n" +
+      "Se guardará únicamente en INGRESOS."
+    );
+
+    if (!aprobado) return;
+
+    // El ID se reutiliza si hay que reintentar.
+    operacionPendienteId =
+      crypto.randomUUID().replaceAll("-", "");
+
+    operacionPendienteDatos = {
+      proveedor,
+      remito,
+      productos
+    };
+  }
+
+  cerrarCamaraIngreso();
+  confirmandoIngreso = true;
+
+  const boton =
+    document.getElementById("botonConfirmarIngreso");
+
+  boton.disabled = true;
+  boton.textContent = "GUARDANDO REMITO...";
+
+  document.getElementById("proveedorIngreso")
+    .readOnly = true;
+  document.getElementById("remitoIngreso")
+    .readOnly = true;
+
+  mostrarEstadoIngreso(
+    "Enviando remito. No cierres la aplicación..."
+  );
+
+  try {
+    const respuesta = await fetch(API + "/ingresos", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        credential: credencialGoogle,
+        operacionId: operacionPendienteId,
+        ...operacionPendienteDatos
+      })
+    });
+
+    const datos = await respuesta.json();
+
+    if (!respuesta.ok || !datos.ok) {
+      if (respuesta.status === 401) {
+        mostrarEstadoIngreso(
+          "Sesión vencida. Volvé a iniciar sesión. " +
+          "No borres la lista."
+        );
+        sesionVencida();
+      } else {
+        mostrarEstadoIngreso(
+          "No se confirmó el guardado: " +
+          (datos.error || "Error desconocido") +
+          ". Reintentá."
+        );
+      }
+      return;
+    }
+
+    const remitoGuardado =
+      operacionPendienteDatos.remito;
+
+    const cantidadProductos =
+      operacionPendienteDatos.productos.length;
+
+    listaMercaderia.clear();
+    historialIngreso = [];
+    operacionPendienteDatos = null;
+    operacionPendienteId = null;
+
+    renderizarIngreso();
+
+    document.getElementById("remitoIngreso").value = "";
+    actualizarFechaIngreso();
+
+    mostrarEstadoIngreso(
+      "REMITO " + remitoGuardado +
+      " GUARDADO CORRECTAMENTE.\n" +
+      cantidadProductos + " productos.\n" +
+      (datos.duplicado
+        ? "Ya estaba registrado; no se duplicó."
+        : "Registrado en INGRESOS.")
+    );
+
+  } catch (error) {
+    console.error(error);
+    mostrarEstadoIngreso(
+      "No se pudo comprobar si se guardó.\n" +
+      "No borres la lista. Presioná CONFIRMAR INGRESO " +
+      "para reintentar la misma operación."
+    );
+
+  } finally {
+    confirmandoIngreso = false;
+    boton.disabled = false;
+
+    boton.textContent = operacionPendienteDatos
+      ? "REINTENTAR CONFIRMACIÓN"
+      : "CONFIRMAR INGRESO";
+
+    document.getElementById("proveedorIngreso")
+      .readOnly = Boolean(operacionPendienteDatos);
+
+    document.getElementById("remitoIngreso")
+      .readOnly = Boolean(operacionPendienteDatos);
+  }
+}
+
 // ESCÁNER CONTINUO DE INGRESO
 
 async function abrirCamaraIngreso() {
+  if (confirmandoIngreso || operacionPendienteDatos) {
+    mostrarEstadoIngreso(
+      "Primero resolvé la confirmación pendiente."
+    );
+    return;
+  }
+
   if (escaneandoIngreso) return;
 
   if (!credencialGoogle) {
@@ -909,13 +1078,16 @@ async function abrirCamaraIngreso() {
     return;
   }
 
-  if (!document.getElementById("proveedorIngreso").value.trim()) {
+  if (!document.getElementById("proveedorIngreso")
+      .value.trim()) {
     mostrarEstadoIngreso("Ingresá el proveedor.");
     return;
   }
 
   if (!("BarcodeDetector" in window)) {
-    mostrarEstadoIngreso("Navegador sin BarcodeDetector.");
+    mostrarEstadoIngreso(
+      "Navegador sin BarcodeDetector."
+    );
     return;
   }
 
@@ -933,10 +1105,11 @@ async function abrirCamaraIngreso() {
         audio: false
       });
 
-    const video = document.getElementById("videoIngreso");
+    const video =
+      document.getElementById("videoIngreso");
+
     video.srcObject = streamIngreso;
     video.style.display = "block";
-
     await video.play();
 
     escaneandoIngreso = true;
@@ -996,11 +1169,15 @@ function cerrarCamaraIngreso() {
   escaneandoIngreso = false;
 
   if (streamIngreso) {
-    streamIngreso.getTracks().forEach(track => track.stop());
+    streamIngreso.getTracks().forEach(
+      track => track.stop()
+    );
     streamIngreso = null;
   }
 
-  const video = document.getElementById("videoIngreso");
+  const video =
+    document.getElementById("videoIngreso");
+
   video.style.display = "none";
   video.srcObject = null;
 }
@@ -1011,8 +1188,11 @@ window.addEventListener("load", () => {
   if (window.google?.accounts?.id) {
     iniciarGoogle();
   } else {
-    const estado = document.getElementById("estadoLogin");
-    estado.textContent = "Cargando acceso con Google...";
+    const estado =
+      document.getElementById("estadoLogin");
+
+    estado.textContent =
+      "Cargando acceso con Google...";
 
     let intentos = 0;
 
@@ -1025,15 +1205,16 @@ window.addEventListener("load", () => {
       } else if (++intentos >= 30) {
         clearInterval(espera);
         estado.textContent =
-          "No se pudo cargar Google. Revisá la conexión y actualizá la página.";
+          "No se pudo cargar Google. " +
+          "Revisá la conexión y actualizá la página.";
       }
     }, 500);
   }
 });
 </script>
-
 </body>
 </html>
+
 
 
 
