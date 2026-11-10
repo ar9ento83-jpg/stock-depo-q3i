@@ -71,7 +71,7 @@ input[readonly] { background: #e9edf0; }
 #resultadoExterno { white-space:pre-line; }
 .menu small { font-size: 11px; font-weight: normal; }
 .secundario { background: #52616b; }
-#video, #videoIngreso {
+#video, #videoIngreso, #videoExterno {
   width: 100%;
   display: none;
   border-radius: 12px;
@@ -132,7 +132,7 @@ input[readonly] { background: #e9edf0; }
 .contenedor-busqueda {
   position: relative;
 }
-#sugerenciasIngreso {
+#sugerenciasIngreso, #sugerenciasExternoCarga {
   background: white;
   border: 1px solid #cbd5dc;
   border-radius: 10px;
@@ -352,7 +352,39 @@ input[readonly] { background: #e9edf0; }
   <div class="panel">
     <h3 id="tituloCajonExterno"></h3>
     <p id="resultadoExterno" class="nota"></p>
-    <p class="nota">Agregar, Devolver y Recontar estarán disponibles en la siguiente etapa, con escáner, carga manual y cantidades rápidas. Por ahora esta pantalla es de consulta.</p>
+    <button id="abrirCargaExterna" onclick="abrirAgregarExterno()">➕ AGREGAR MERCADERÍA</button>
+    <p class="nota">Devolver y Recontar estarán disponibles próximamente.</p>
+  </div>
+  <div id="panelCargaExterna" class="panel oculto">
+    <h3>Agregar mercadería al cajón</h3>
+    <p id="destinoCargaExterna"></p>
+    <h4>Cantidad por lectura</h4>
+    <div id="cantidadesExternoCarga" class="cantidades">
+      <button class="cantidad-activa" onclick="seleccionarCantidadExterna(1,this)">1</button>
+      <button onclick="seleccionarCantidadExterna(2,this)">2</button>
+      <button onclick="seleccionarCantidadExterna(5,this)">5</button>
+      <button onclick="seleccionarCantidadExterna(10,this)">10</button>
+      <button onclick="seleccionarCantidadExterna(50,this)">50</button>
+      <button onclick="seleccionarCantidadExterna(100,this)">100</button>
+      <button onclick="seleccionarCantidadExterna(null,this)">CUSTOM</button>
+    </div>
+    <input id="cantidadExternaPersonalizada" class="oculto" type="number" min="1" step="1" placeholder="Cantidad personalizada">
+    <p id="cantidadExternaTexto">Cada lectura suma: 1</p>
+    <div class="contenedor-busqueda">
+      <input id="productoExternoCarga" placeholder="SKU, código de barras o descripción" autocomplete="off" oninput="programarBusquedaExternaCarga()" onkeydown="if(event.key==='Enter'){event.preventDefault();agregarManualExterno();}">
+      <div id="sugerenciasExternoCarga" class="oculto"></div>
+    </div>
+    <button onclick="agregarManualExterno()">AGREGAR MANUALMENTE</button>
+    <button onclick="abrirCamaraExterna()">ESCANEAR CÓDIGO</button>
+    <button class="secundario" onclick="cerrarCamaraExterna()">CERRAR CÁMARA</button>
+    <video id="videoExterno" autoplay playsinline></video>
+    <p id="estadoExternoCarga" class="nota"></p>
+    <h3 id="contadorExternoCarga">0 productos diferentes</h3>
+    <div id="listaExternoCarga"></div>
+    <button class="secundario" onclick="deshacerExternoCarga()">DESHACER ÚLTIMO</button>
+    <button class="secundario" onclick="limpiarExternoCarga()">LIMPIAR LISTA</button>
+    <button id="confirmarExternoCarga" onclick="confirmarAgregarExterno()">CONFIRMAR AGREGADO</button>
+    <button class="secundario" onclick="cerrarAgregarExterno()">CERRAR CARGA</button>
   </div>
 </section>
 
@@ -381,6 +413,7 @@ let rolUsuario = null;
 let depositosExternos = [];
 let depositoExternoActual = null;
 let cajonesExternosActuales = [];
+let cajonExternoActual = null;
 
 let stream = null;
 let detector = null;
@@ -473,6 +506,7 @@ function sesionVencida() {
   rolUsuario = null;
   cerrarCamara();
   cerrarCamaraIngreso();
+  cerrarCamaraExterna();
   ocultarSugerencias();
   mostrarPantalla("pantallaMenu");
   document.getElementById("pantallaMenu")
@@ -486,6 +520,11 @@ function sesionVencida() {
 // NAVEGACIÓN
 
 function mostrarPantalla(id) {
+  if (pendienteExternoDatos && id !== 'pantallaDetalleCajon' &&
+      !document.getElementById('pantallaDetalleCajon').classList.contains('oculto')) {
+    alert('Hay una operación externa pendiente. Reintentá la confirmación antes de salir.');
+    return;
+  }
   [
     "pantallaMenu",
     "pantallaStock",
@@ -511,6 +550,7 @@ function abrirModulo(modulo) {
 
   cerrarCamara();
   cerrarCamaraIngreso();
+  cerrarCamaraExterna();
   ocultarSugerencias();
 
   if (modulo === "stock") {
@@ -543,6 +583,7 @@ function abrirModulo(modulo) {
 function volverMenu() {
   cerrarCamara();
   cerrarCamaraIngreso();
+  cerrarCamaraExterna();
   ocultarSugerencias();
   mostrarPantalla("pantallaMenu");
 }
@@ -633,6 +674,9 @@ async function abrirDepositoExterno(id) {
       boton.className = "secundario";
       boton.textContent = "VER PRODUCTOS SIN CAJÓN";
       boton.onclick = () => {
+        cajonExternoActual = 0;
+        reiniciarCargaExterna();
+        document.getElementById("panelCargaExterna").classList.add("oculto");
         document.getElementById("tituloCajonExterno").textContent = "Sin cajón asignado";
         document.getElementById("resultadoExterno").textContent = sinCajon.map(x =>
           `${x.sku}: ${x.cantidad} unidades`).join("\n");
@@ -646,6 +690,14 @@ async function abrirDepositoExterno(id) {
 }
 
 function abrirDetalleCajon(cajon) {
+  if (pendienteExternoDatos) {
+    alert("Hay una confirmación pendiente. Volvé a la carga y reintentá antes de cambiar de cajón.");
+    return;
+  }
+  cerrarCamaraExterna();
+  cajonExternoActual = Number(cajon.numero);
+  reiniciarCargaExterna();
+  document.getElementById("panelCargaExterna").classList.add("oculto");
   document.getElementById("tituloCajonExterno").textContent =
     `${cajon.nombre || "Cajón " + cajon.numero}`;
   document.getElementById("resultadoExterno").textContent =
@@ -778,6 +830,214 @@ async function buscarProductoExterno() {
   } catch (error) {
     resultado.textContent = error.message;
   }
+}
+
+// AGREGAR STOCK EXTERNO: CARGA Y CONFIRMACIÓN
+let cantidadExterna = 1;
+let listaExterna = new Map();
+let historialExterno = [];
+let pendienteExternoId = null;
+let pendienteExternoDatos = null;
+let guardandoExterno = false;
+let procesandoExterno = false;
+let temporizadorExternoCarga = null;
+let secuenciaExternoCarga = 0;
+let streamExterno = null;
+let detectorExterno = null;
+let escaneandoExterno = false;
+let ultimoCodigoExterno = null;
+let ausenciasExterno = 0;
+
+function estadoCargaExterna(mensaje) {
+  document.getElementById("estadoExternoCarga").textContent = mensaje;
+}
+function reiniciarCargaExterna() {
+  if (pendienteExternoDatos) return;
+  listaExterna.clear(); historialExterno = [];
+  document.getElementById("productoExternoCarga").value = "";
+  ocultarSugerenciasExternoCarga();
+  renderizarCargaExterna(); estadoCargaExterna("");
+}
+function abrirAgregarExterno() {
+  if (!['ADMIN','OPERADOR'].includes(rolUsuario)) {
+    alert('Tu usuario solo puede consultar.'); return;
+  }
+  if (cajonExternoActual === null || !depositoExternoActual) return;
+  const d = depositosExternos.find(x => x.id === depositoExternoActual);
+  document.getElementById('destinoCargaExterna').textContent =
+    (d?.nombre || depositoExternoActual) + ' · ' +
+    (cajonExternoActual === 0 ? 'Sin cajón' : 'Cajón ' + String(cajonExternoActual).padStart(2,'0'));
+  document.getElementById('panelCargaExterna').classList.remove('oculto');
+}
+function cerrarAgregarExterno() {
+  if (guardandoExterno || pendienteExternoDatos) {
+    estadoCargaExterna('Primero resolvé la confirmación pendiente.'); return;
+  }
+  if (listaExterna.size && !confirm('¿Cerrar y descartar la lista sin guardar?')) return;
+  cerrarCamaraExterna(); reiniciarCargaExterna();
+  document.getElementById('panelCargaExterna').classList.add('oculto');
+}
+function seleccionarCantidadExterna(valor, boton) {
+  if (pendienteExternoDatos || guardandoExterno) return;
+  document.querySelectorAll('#cantidadesExternoCarga button').forEach(b => b.classList.remove('cantidad-activa'));
+  boton.classList.add('cantidad-activa'); cantidadExterna = valor;
+  document.getElementById('cantidadExternaPersonalizada').classList.toggle('oculto', valor !== null);
+  actualizarCantidadExterna();
+}
+function obtenerCantidadExterna() {
+  const v = cantidadExterna === null ?
+    Number(document.getElementById('cantidadExternaPersonalizada').value) : cantidadExterna;
+  if (cantidadExterna === null && !document.getElementById('cantidadExternaPersonalizada').value.trim()) return null;
+  return Number.isSafeInteger(v) && v > 0 ? v : null;
+}
+function actualizarCantidadExterna() {
+  const v = obtenerCantidadExterna();
+  document.getElementById('cantidadExternaTexto').textContent = v ? 'Cada lectura suma: ' + v : 'Ingresá una cantidad válida';
+}
+document.getElementById('cantidadExternaPersonalizada').addEventListener('input', actualizarCantidadExterna);
+function ocultarSugerenciasExternoCarga() {
+  clearTimeout(temporizadorExternoCarga); secuenciaExternoCarga++;
+  const c = document.getElementById('sugerenciasExternoCarga');
+  c.replaceChildren(); c.classList.add('oculto');
+}
+function programarBusquedaExternaCarga() {
+  ocultarSugerenciasExternoCarga();
+  if (pendienteExternoDatos || guardandoExterno) return;
+  const q = document.getElementById('productoExternoCarga').value.trim();
+  if (q.length < 2) return;
+  const n = ++secuenciaExternoCarga;
+  temporizadorExternoCarga = setTimeout(async () => {
+    try {
+      const datos = await solicitarExterno('/buscar-productos', { busqueda:q });
+      if (n !== secuenciaExternoCarga) return;
+      const cont = document.getElementById('sugerenciasExternoCarga');
+      cont.replaceChildren();
+      for (const p of datos.productos || []) {
+        const b = document.createElement('button'); b.className='sugerencia';
+        b.textContent=p.sku+' · '+p.descripcion;
+        b.onclick=()=>{ ocultarSugerenciasExternoCarga(); document.getElementById('productoExternoCarga').value=''; acumularExterno(p); };
+        cont.appendChild(b);
+      }
+      if (!cont.childElementCount) cont.textContent='No se encontraron productos en PARAMETROS.';
+      cont.classList.remove('oculto');
+    } catch(e) { if (n === secuenciaExternoCarga) estadoCargaExterna(e.message); }
+  }, 300);
+}
+function acumularExterno(p) {
+  if (pendienteExternoDatos || guardandoExterno) return false;
+  const cantidad = obtenerCantidadExterna();
+  if (!cantidad) { estadoCargaExterna('Cantidad inválida.'); return false; }
+  const clave = p.sku.trim().toUpperCase();
+  const anterior = listaExterna.get(clave);
+  const total = (anterior?.cantidad || 0) + cantidad;
+  if (!Number.isSafeInteger(total)) { estadoCargaExterna('Cantidad demasiado grande.'); return false; }
+  listaExterna.set(clave, { sku:p.sku, descripcion:p.descripcion || p.sku, cantidad:total });
+  historialExterno.push({ clave, cantidad }); renderizarCargaExterna();
+  estadoCargaExterna(p.sku + ': +' + cantidad);
+  return true;
+}
+async function agregarManualExterno() {
+  const campo = document.getElementById('productoExternoCarga');
+  const codigo = campo.value.trim();
+  if (!codigo || procesandoExterno || guardandoExterno || pendienteExternoDatos) return;
+  procesandoExterno=true; ocultarSugerenciasExternoCarga();
+  try {
+    const {respuesta, datos} = await consultarProducto(codigo);
+    if (!respuesta.ok || !datos.ok) {
+      if (respuesta.status === 401) sesionVencida();
+      estadoCargaExterna(datos.error || 'Producto no encontrado. Debe existir en PARAMETROS.'); return;
+    }
+    const p=datos.producto;
+    if (acumularExterno(p)) campo.value='';
+  } catch(e) { estadoCargaExterna('Error al consultar: '+e.message); }
+  finally { procesandoExterno=false; }
+}
+function renderizarCargaExterna() {
+  const cont = document.getElementById('listaExternoCarga'); cont.replaceChildren();
+  document.getElementById('contadorExternoCarga').textContent = listaExterna.size+' productos diferentes';
+  for (const p of listaExterna.values()) {
+    const fila=document.createElement('div'); fila.className='fila-ingreso';
+    const info=document.createElement('div'); info.textContent=p.descripcion;
+    const sku=document.createElement('small'); sku.textContent=p.sku; info.appendChild(sku);
+    const cant=document.createElement('strong'); cant.textContent=p.cantidad;
+    fila.append(info,cant); cont.appendChild(fila);
+  }
+}
+function deshacerExternoCarga() {
+  if (pendienteExternoDatos || guardandoExterno) return;
+  const u=historialExterno.pop();
+  if (!u) { estadoCargaExterna('No hay lecturas para deshacer.'); return; }
+  const p=listaExterna.get(u.clave);
+  if (p) { p.cantidad-=u.cantidad; if (p.cantidad<=0) listaExterna.delete(u.clave); }
+  renderizarCargaExterna(); estadoCargaExterna('Última lectura deshecha.');
+}
+function limpiarExternoCarga() {
+  if (pendienteExternoDatos || guardandoExterno) return;
+  if (!listaExterna.size || confirm('¿Vaciar toda la lista?')) reiniciarCargaExterna();
+}
+async function confirmarAgregarExterno() {
+  if (guardandoExterno || procesandoExterno) return;
+  if (!['ADMIN','OPERADOR'].includes(rolUsuario)) return;
+  if (!pendienteExternoDatos) {
+    if (!listaExterna.size) { estadoCargaExterna('Agregá al menos un producto.'); return; }
+    const productos=[...listaExterna.values()].map(p=>({sku:p.sku,cantidad:p.cantidad}));
+    const unidades=productos.reduce((a,p)=>a+p.cantidad,0);
+    if (!confirm('¿Agregar '+unidades+' unidades de '+productos.length+' productos al cajón '+cajonExternoActual+'?\n\nSe guardará en STOCK_EXTERNO y MOVIMIENTOS_EXTERNOS.')) return;
+    pendienteExternoId=crypto.randomUUID().replaceAll('-','');
+    pendienteExternoDatos={depositoId:depositoExternoActual,cajon:cajonExternoActual,productos};
+  }
+  cerrarCamaraExterna(); ocultarSugerenciasExternoCarga(); guardandoExterno=true;
+  const boton=document.getElementById('confirmarExternoCarga'); boton.disabled=true;
+  boton.textContent='GUARDANDO...'; estadoCargaExterna('Guardando. No cierres la aplicación...');
+  try {
+    const datos=await solicitarExterno('/agregar-externo', {
+      ...pendienteExternoDatos, operacionId:pendienteExternoId
+    });
+    pendienteExternoDatos=null; pendienteExternoId=null;
+    listaExterna.clear(); historialExterno=[]; renderizarCargaExterna();
+    document.getElementById('productoExternoCarga').value='';
+    estadoCargaExterna(datos.duplicado ? 'La operación ya estaba registrada; no se duplicó.' : 'Mercadería agregada correctamente.');
+    // La pantalla de cajones se actualizará al regresar.
+  } catch(e) {
+    estadoCargaExterna('No se pudo comprobar el guardado: '+e.message+'\nNo borres la lista. Reintentá la misma confirmación.');
+  } finally {
+    guardandoExterno=false; boton.disabled=false;
+    boton.textContent=pendienteExternoDatos?'REINTENTAR CONFIRMACIÓN':'CONFIRMAR AGREGADO';
+  }
+}
+async function abrirCamaraExterna() {
+  if (escaneandoExterno || pendienteExternoDatos || guardandoExterno) return;
+  if (!('BarcodeDetector' in window)) { estadoCargaExterna('Este navegador no admite el escáner por cámara.'); return; }
+  try {
+    detectorExterno=new BarcodeDetector({formats:['ean_13','ean_8','code_128','code_39','upc_a']});
+    streamExterno=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});
+    const video=document.getElementById('videoExterno'); video.srcObject=streamExterno;
+    video.style.display='block'; await video.play();
+    escaneandoExterno=true; ultimoCodigoExterno=null; ausenciasExterno=0;
+    detectarExterno(); estadoCargaExterna('Escáner activo.');
+  } catch(e) { cerrarCamaraExterna(); estadoCargaExterna('No se pudo abrir la cámara: '+e.message); }
+}
+async function detectarExterno() {
+  if (!escaneandoExterno) return;
+  try {
+    const codigos=await detectorExterno.detect(document.getElementById('videoExterno'));
+    if (!codigos.length) { if (++ausenciasExterno>=3) ultimoCodigoExterno=null; }
+    else {
+      ausenciasExterno=0; const codigo=codigos[0].rawValue;
+      if (codigo!==ultimoCodigoExterno && !procesandoExterno) {
+        ultimoCodigoExterno=codigo;
+        document.getElementById('productoExternoCarga').value=codigo;
+        await agregarManualExterno();
+      }
+    }
+  } catch(e) { console.error(e); }
+  if (escaneandoExterno) setTimeout(detectarExterno,250);
+}
+function cerrarCamaraExterna() {
+  escaneandoExterno=false;
+  if (streamExterno) { streamExterno.getTracks().forEach(t=>t.stop()); streamExterno=null; }
+  const video=document.getElementById('videoExterno');
+  video.style.display='none'; video.srcObject=null;
 }
 
 // FECHA AUTOMÁTICA
