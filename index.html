@@ -63,6 +63,12 @@ input[readonly] { background: #e9edf0; }
 }
 .menu .icono { font-size: 32px; }
 .menu .pendiente { background: #607d8b; }
+.cajones-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; }
+.cajones-grid button { margin:0; padding:12px 5px; font-size:15px; }
+.externo-fila { padding:12px; background:#f2f4f7; border-radius:10px; margin:8px 0; }
+.externo-fila button { text-align:left; margin:0; }
+.externo-fila small { display:block; margin-top:5px; }
+#resultadoExterno { white-space:pre-line; }
 .menu small { font-size: 11px; font-weight: normal; }
 .secundario { background: #52616b; }
 #video, #videoIngreso {
@@ -202,8 +208,8 @@ input[readonly] { background: #e9edf0; }
     </button>
     <button class="pendiente" onclick="abrirModulo('exterior')">
       <span class="icono">🚚</span>
-      Stock exterior
-      <small>Camionetas 1 y 2</small>
+      Stock externo
+      <small>Depósitos y cajones</small>
     </button>
   </div>
 </section>
@@ -312,6 +318,36 @@ input[readonly] { background: #e9edf0; }
   </div>
 </section>
 
+<section id="pantallaExterno" class="oculto">
+  <button class="secundario" onclick="volverMenu()">← VOLVER AL MENÚ</button>
+  <div class="panel">
+    <h3>🚚 Stock externo</h3>
+    <p class="nota">Seleccioná un depósito para ver sus cajones.</p>
+    <div id="listaDepositosExternos">Cargando depósitos...</div>
+  </div>
+</section>
+
+<section id="pantallaCajones" class="oculto">
+  <button class="secundario" onclick="abrirModulo('exterior')">← VOLVER A DEPÓSITOS</button>
+  <div class="panel">
+    <h3 id="tituloDepositoExterno">Depósito</h3>
+    <div id="resumenDepositoExterno"></div>
+    <button class="secundario" onclick="verDuplicadosExternos()">BUSCAR SKU REPETIDOS ENTRE CAJONES</button>
+    <div id="resultadoDuplicadosExternos"></div>
+    <h4>Cajones</h4>
+    <div id="listaCajonesExternos" class="cajones-grid"></div>
+  </div>
+</section>
+
+<section id="pantallaDetalleCajon" class="oculto">
+  <button class="secundario" onclick="abrirDepositoExterno(depositoExternoActual)">← VOLVER A CAJONES</button>
+  <div class="panel">
+    <h3 id="tituloCajonExterno"></h3>
+    <p id="resultadoExterno" class="nota"></p>
+    <p class="nota">Agregar, Devolver y Recontar estarán disponibles en la siguiente etapa, con escáner, carga manual y cantidades rápidas. Por ahora esta pantalla es de consulta.</p>
+  </div>
+</section>
+
 <section id="pantallaPendiente" class="oculto">
   <button class="secundario" onclick="volverMenu()">
     ← VOLVER AL MENÚ
@@ -334,6 +370,9 @@ const API =
 
 let credencialGoogle = null;
 let rolUsuario = null;
+let depositosExternos = [];
+let depositoExternoActual = null;
+let cajonesExternosActuales = [];
 
 let stream = null;
 let detector = null;
@@ -443,6 +482,9 @@ function mostrarPantalla(id) {
     "pantallaMenu",
     "pantallaStock",
     "pantallaIngreso",
+    "pantallaExterno",
+    "pantallaCajones",
+    "pantallaDetalleCajon",
     "pantallaPendiente"
   ].forEach(pantalla => {
     document.getElementById(pantalla)
@@ -474,9 +516,14 @@ function abrirModulo(modulo) {
     return;
   }
 
+  if (modulo === "exterior") {
+    mostrarPantalla("pantallaExterno");
+    cargarDepositosExternos();
+    return;
+  }
+
   const titulos = {
-    pedidos: "Armado de pedidos",
-    exterior: "Stock exterior - Camionetas"
+    pedidos: "Armado de pedidos"
   };
 
   document.getElementById("tituloPendiente").textContent =
@@ -490,6 +537,135 @@ function volverMenu() {
   cerrarCamaraIngreso();
   ocultarSugerencias();
   mostrarPantalla("pantallaMenu");
+}
+
+// CONSULTA DE DEPÓSITOS Y CAJONES EXTERNOS
+
+async function solicitarExterno(ruta, parametros = {}) {
+  const respuesta = await fetch(API + ruta, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ credential: credencialGoogle, ...parametros })
+  });
+  const datos = await respuesta.json();
+  if (respuesta.status === 401) sesionVencida();
+  if (!respuesta.ok || !datos.ok) throw new Error(datos.error || "Error de consulta");
+  return datos;
+}
+
+async function cargarDepositosExternos() {
+  const lista = document.getElementById("listaDepositosExternos");
+  lista.textContent = "Cargando depósitos...";
+  try {
+    const datos = await solicitarExterno("/depositos-externos");
+    depositosExternos = datos.depositos || [];
+    lista.replaceChildren();
+    if (!depositosExternos.length) {
+      lista.textContent = "No hay depósitos externos activos.";
+      return;
+    }
+    for (const deposito of depositosExternos) {
+      const fila = document.createElement("div");
+      fila.className = "externo-fila";
+      const boton = document.createElement("button");
+      boton.textContent = "🚚 " + deposito.nombre;
+      boton.addEventListener("click", () => abrirDepositoExterno(deposito.id));
+      const detalle = document.createElement("small");
+      detalle.textContent = `${deposito.cajonesConfigurados} cajones · ${deposito.skuDiferentes} SKU · ${deposito.unidades} unidades`;
+      fila.append(boton, detalle);
+      lista.appendChild(fila);
+    }
+  } catch (error) {
+    lista.textContent = "No se pudieron cargar los depósitos: " + error.message;
+  }
+}
+
+async function abrirDepositoExterno(id) {
+  if (!id) return;
+  depositoExternoActual = id;
+  const deposito = depositosExternos.find(d => d.id === id);
+  document.getElementById("tituloDepositoExterno").textContent =
+    "🚚 " + (deposito?.nombre || id);
+  document.getElementById("resultadoDuplicadosExternos").replaceChildren();
+  document.getElementById("listaCajonesExternos").textContent = "Cargando cajones...";
+  mostrarPantalla("pantallaCajones");
+  try {
+    const datos = await solicitarExterno("/cajones-externos", { depositoId: id });
+    if (depositoExternoActual !== id) return;
+    const configurados = new Map((datos.cajones || []).map(c => [Number(c.numero), c]));
+    // Se generan los cajones hasta el número configurado en el depósito.
+    // Los registros explícitos de CAJONES_EXTERNOS prevalecen.
+    const total = Math.max(0, Number(deposito?.cajonesConfigurados) || 0);
+    const cajones = [];
+    for (let numero = 1; numero <= total; numero++) {
+      cajones.push(configurados.get(numero) || {
+        numero, nombre: "CAJON " + String(numero).padStart(2, "0"),
+        skuDiferentes: 0, unidades: 0
+      });
+    }
+    for (const c of configurados.values()) {
+      if (c.numero > total) cajones.push(c);
+    }
+    cajonesExternosActuales = cajones;
+    const lista = document.getElementById("listaCajonesExternos");
+    lista.replaceChildren();
+    for (const cajon of cajones) {
+      const boton = document.createElement("button");
+      boton.textContent = `${String(cajon.numero).padStart(2,"0")} · ${cajon.skuDiferentes} SKU`;
+      boton.title = `${cajon.unidades} unidades`;
+      boton.addEventListener("click", () => abrirDetalleCajon(cajon));
+      lista.appendChild(boton);
+    }
+    const sinCajon = datos.sinCajon || [];
+    const resumen = document.getElementById("resumenDepositoExterno");
+    resumen.textContent = `${cajones.length} cajones · ${sinCajon.length} registros sin cajón asignado`;
+    if (sinCajon.length) {
+      const boton = document.createElement("button");
+      boton.className = "secundario";
+      boton.textContent = "VER PRODUCTOS SIN CAJÓN";
+      boton.onclick = () => {
+        document.getElementById("tituloCajonExterno").textContent = "Sin cajón asignado";
+        document.getElementById("resultadoExterno").textContent = sinCajon.map(x =>
+          `${x.sku}: ${x.cantidad} unidades`).join("\n");
+        mostrarPantalla("pantallaDetalleCajon");
+      };
+      resumen.appendChild(boton);
+    }
+  } catch (error) {
+    document.getElementById("listaCajonesExternos").textContent = error.message;
+  }
+}
+
+function abrirDetalleCajon(cajon) {
+  document.getElementById("tituloCajonExterno").textContent =
+    `${cajon.nombre || "Cajón " + cajon.numero}`;
+  document.getElementById("resultadoExterno").textContent =
+    `${cajon.skuDiferentes} SKU diferentes · ${cajon.unidades} unidades`; 
+  mostrarPantalla("pantallaDetalleCajon");
+}
+
+async function verDuplicadosExternos() {
+  const contenedor = document.getElementById("resultadoDuplicadosExternos");
+  contenedor.textContent = "Buscando duplicados...";
+  try {
+    const datos = await solicitarExterno("/duplicados-externos", {
+      depositoId: depositoExternoActual
+    });
+    contenedor.replaceChildren();
+    if (!datos.duplicados?.length) {
+      contenedor.textContent = "No hay SKU repetidos entre cajones de este depósito.";
+      return;
+    }
+    for (const item of datos.duplicados) {
+      const fila = document.createElement("div");
+      fila.className = "externo-fila";
+      fila.textContent = `${item.sku}: ${item.total} unidades · ` +
+        item.cajones.map(c => `Cajón ${c.numero}: ${c.cantidad}`).join(" · ");
+      contenedor.appendChild(fila);
+    }
+  } catch (error) {
+    contenedor.textContent = error.message;
+  }
 }
 
 // FECHA AUTOMÁTICA
@@ -556,10 +732,16 @@ async function buscar() {
 
     const producto = datos.producto;
 
+    const externos = (producto.depositosExternos || [])
+      .map(d => `${d.nombre}: ${d.cantidad} unidades` +
+        (d.cajones?.length ? " (" + d.cajones.map(c =>
+          `cajón ${c.numero}: ${c.cantidad}`).join(", ") + ")" : ""))
+      .join("\n");
     resultado.textContent =
       "SKU: " + producto.sku + "\n" +
       "Descripción: " + producto.descripcion + "\n" +
-      "Stock disponible: " + producto.stock;
+      "Depósito principal: " + producto.stock + "\n" +
+      (externos ? "\nSTOCK EXTERNO\n" + externos : "");
 
   } catch (error) {
     console.error(error);
@@ -1478,7 +1660,6 @@ window.addEventListener("load", () => {
 </script>
 </body>
 </html>
-
 
 
 
