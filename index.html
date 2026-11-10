@@ -352,6 +352,7 @@ input[readonly] { background: #e9edf0; }
   <div class="panel">
     <h3 id="tituloCajonExterno"></h3>
     <p id="resultadoExterno" class="nota"></p>
+    <div id="productosDentroCajon"></div>
     <button id="abrirCargaExterna" onclick="abrirAgregarExterno()">➕ AGREGAR MERCADERÍA</button>
     <button onclick="abrirOperacionExterna('DEVOLVER')">↩️ DEVOLVER MERCADERÍA</button>
     <button id="botonRecontarCajon" class="secundario" onclick="recontarCajonCompleto()">📋 RECONTAR CAJÓN (REINICIAR A 0)</button>
@@ -705,6 +706,40 @@ function abrirDetalleCajon(cajon) {
     `${cajon.nombre || "Cajón " + cajon.numero}`;
   document.getElementById("resultadoExterno").textContent =
     `${cajon.skuDiferentes} PRODUCTOS diferentes · ${cajon.unidades} unidades`; 
+  const contenedor = document.getElementById("productosDentroCajon");
+  contenedor.replaceChildren();
+  const productos = (cajon.productos || []).filter(p => Number(p.cantidad) > 0);
+  if (!productos.length) {
+    const aviso = document.createElement("p");
+    aviso.className = "nota";
+    aviso.textContent = "No hay productos registrados en este cajón.";
+    contenedor.appendChild(aviso);
+  } else {
+    const tabla = document.createElement("table");
+    tabla.style.width = "100%";
+    tabla.style.borderCollapse = "collapse";
+    const encabezado = document.createElement("tr");
+    for (const titulo of ["SKU", "DESCRIPCIÓN", "CANTIDAD"]) {
+      const celda = document.createElement("th");
+      celda.textContent = titulo;
+      celda.style.textAlign = "left";
+      celda.style.padding = "10px 6px";
+      encabezado.appendChild(celda);
+    }
+    tabla.appendChild(encabezado);
+    for (const producto of productos) {
+      const fila = document.createElement("tr");
+      for (const valor of [producto.sku, producto.descripcion || "Sin descripción", String(producto.cantidad)]) {
+        const celda = document.createElement("td");
+        celda.textContent = valor;
+        celda.style.padding = "10px 6px";
+        celda.style.borderTop = "1px solid #ddd";
+        fila.appendChild(celda);
+      }
+      tabla.appendChild(fila);
+    }
+    contenedor.appendChild(tabla);
+  }
   mostrarPantalla("pantallaDetalleCajon");
 }
 
