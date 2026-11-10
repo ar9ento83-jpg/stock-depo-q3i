@@ -71,7 +71,7 @@ input[readonly] { background: #e9edf0; }
 #resultadoExterno { white-space:pre-line; }
 .menu small { font-size: 11px; font-weight: normal; }
 .secundario { background: #52616b; }
-#video, #videoIngreso, #videoExterno {
+#video, #videoIngreso, #videoExterno, #videoBusquedaExterna {
   width: 100%;
   display: none;
   border-radius: 12px;
@@ -340,6 +340,10 @@ input[readonly] { background: #e9edf0; }
       <input id="codigoProductoExterno" placeholder="Código o descripción" autocomplete="off" oninput="programarSugerenciasExternas()" onkeydown="if(event.key==='Enter') buscarProductoExterno()">
       <div id="sugerenciasProductoExterno"></div>
       <button onclick="buscarProductoExterno()">BUSCAR</button>
+      <button onclick="abrirCamaraBusquedaExterna()">📷 ESCANEAR CÓDIGO</button>
+      <button class="secundario" onclick="cerrarCamaraBusquedaExterna()">CERRAR CÁMARA</button>
+      <video id="videoBusquedaExterna" autoplay playsinline></video>
+      <p id="estadoCamaraBusquedaExterna" class="nota"></p>
       <div id="resultadoProductoExterno"></div>
     </div>
     <h4>Cajones</h4>
@@ -511,6 +515,7 @@ function sesionVencida() {
   cerrarCamara();
   cerrarCamaraIngreso();
   cerrarCamaraExterna();
+  cerrarCamaraBusquedaExterna();
   ocultarSugerencias();
   mostrarPantalla("pantallaMenu");
   document.getElementById("pantallaMenu")
@@ -555,6 +560,7 @@ function abrirModulo(modulo) {
   cerrarCamara();
   cerrarCamaraIngreso();
   cerrarCamaraExterna();
+  cerrarCamaraBusquedaExterna();
   ocultarSugerencias();
 
   if (modulo === "stock") {
@@ -588,6 +594,7 @@ function volverMenu() {
   cerrarCamara();
   cerrarCamaraIngreso();
   cerrarCamaraExterna();
+  cerrarCamaraBusquedaExterna();
   ocultarSugerencias();
   mostrarPantalla("pantallaMenu");
 }
@@ -694,6 +701,7 @@ async function abrirDepositoExterno(id) {
 }
 
 function abrirDetalleCajon(cajon) {
+  cerrarCamaraBusquedaExterna();
   if (pendienteExternoDatos) {
     alert("Hay una confirmación pendiente. Volvé a la carga y reintentá antes de cambiar de cajón.");
     return;
@@ -772,7 +780,71 @@ let temporizadorExterno = null;
 let solicitudExterna = 0;
 let productoExternoSeleccionado = null;
 
+let streamBusquedaExterna = null;
+let detectorBusquedaExterna = null;
+let escaneandoBusquedaExterna = false;
+
+function cerrarCamaraBusquedaExterna() {
+  escaneandoBusquedaExterna = false;
+  if (streamBusquedaExterna) {
+    streamBusquedaExterna.getTracks().forEach(track => track.stop());
+    streamBusquedaExterna = null;
+  }
+  const video = document.getElementById('videoBusquedaExterna');
+  if (video) { video.pause(); video.srcObject = null; video.style.display = 'none'; }
+}
+
+async function abrirCamaraBusquedaExterna() {
+  if (escaneandoBusquedaExterna) return;
+  const estado = document.getElementById('estadoCamaraBusquedaExterna');
+  if (!('BarcodeDetector' in window)) {
+    estado.textContent = 'Este navegador no admite el escaneo por cámara. Podés usar el lector físico del Q3i o escribir el código.';
+    return;
+  }
+  try {
+    detectorBusquedaExterna = new BarcodeDetector({
+      formats: ['ean_13','ean_8','code_128','code_39','upc_a']
+    });
+    streamBusquedaExterna = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' }, audio: false
+    });
+    const video = document.getElementById('videoBusquedaExterna');
+    video.srcObject = streamBusquedaExterna;
+    video.style.display = 'block';
+    await video.play();
+    escaneandoBusquedaExterna = true;
+    estado.textContent = 'Apuntá la cámara al código de barras.';
+    detectarBusquedaExterna();
+  } catch (error) {
+    cerrarCamaraBusquedaExterna();
+    estado.textContent = 'No se pudo abrir la cámara: ' + error.message;
+  }
+}
+
+async function detectarBusquedaExterna() {
+  if (!escaneandoBusquedaExterna) return;
+  try {
+    const codigos = await detectorBusquedaExterna.detect(document.getElementById('videoBusquedaExterna'));
+    if (!escaneandoBusquedaExterna) return;
+    if (codigos.length && codigos[0].rawValue) {
+      const codigo = codigos[0].rawValue;
+      cerrarCamaraBusquedaExterna();
+      clearTimeout(temporizadorExterno);
+      solicitudExterna++;
+      productoExternoSeleccionado = null;
+      document.getElementById('codigoProductoExterno').value = codigo;
+      document.getElementById('sugerenciasProductoExterno').replaceChildren();
+      document.getElementById('estadoCamaraBusquedaExterna').textContent = 'Código leído: ' + codigo;
+      await buscarProductoExterno();
+      return;
+    }
+  } catch (error) { console.error('Escáner búsqueda externa:', error); }
+  if (escaneandoBusquedaExterna) setTimeout(detectarBusquedaExterna, 250);
+}
+
 function cerrarBusquedaExterna() {
+  cerrarCamaraBusquedaExterna();
+  document.getElementById('estadoCamaraBusquedaExterna').textContent = '';
   clearTimeout(temporizadorExterno);
   solicitudExterna++;
   productoExternoSeleccionado = null;
@@ -2161,6 +2233,5 @@ window.addEventListener("load", () => {
 </script>
 </body>
 </html>
-
 
 
