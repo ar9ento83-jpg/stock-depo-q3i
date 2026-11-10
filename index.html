@@ -14,6 +14,67 @@
   </script>
 
   <style>
+    
+select {
+  width: 100%;
+  padding: 16px;
+  margin: 8px 0;
+  font-size: 18px;
+  border-radius: 10px;
+  border: 1px solid #cbd5dc;
+  background: white;
+}
+
+.cantidades {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+}
+
+.cantidades button {
+  padding: 13px 3px;
+  margin: 0;
+  font-size: 15px;
+  background: #607d8b;
+}
+
+.cantidades .cantidad-activa {
+  background: #176b40;
+  outline: 3px solid #a5d6a7;
+}
+
+#videoIngreso {
+  display: none;
+  width: 100%;
+  border-radius: 12px;
+  margin-top: 10px;
+}
+
+.fila-ingreso {
+  background: #f2f4f7;
+  padding: 12px;
+  margin: 7px 0;
+  border-radius: 9px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fila-ingreso strong {
+  font-size: 19px;
+}
+
+.fila-ingreso small {
+  display: block;
+  margin-top: 5px;
+  color: #607d8b;
+}
+
+#estadoIngreso {
+  min-height: 20px;
+  color: #176b40;
+}
+
     * { box-sizing: border-box; }
 
     body {
@@ -207,6 +268,92 @@
 
   </section>
 
+  
+<!-- INGRESO DE MERCADERÍA -->
+<section id="pantallaIngreso" class="oculto">
+
+  <button class="secundario" onclick="volverMenu()">
+    ← VOLVER AL MENÚ
+  </button>
+
+  <div class="panel">
+    <h3>Ingreso de mercadería</h3>
+
+    <label for="proveedorIngreso">Proveedor</label>
+    <select id="proveedorIngreso">
+      <option value="">-- Seleccionar proveedor --</option>
+      <option>HADA</option>
+      <option>MDA</option>
+      <option>OSAKA</option>
+      <option>CASBER</option>
+      <option>NUBO</option>
+    </select>
+
+    <h4>Cantidad por escaneo</h4>
+
+    <div id="cantidadesIngreso" class="cantidades">
+      <button class="cantidad-activa"
+              onclick="seleccionarCantidad(1, this)">1</button>
+      <button onclick="seleccionarCantidad(2, this)">2</button>
+      <button onclick="seleccionarCantidad(5, this)">5</button>
+      <button onclick="seleccionarCantidad(10, this)">10</button>
+      <button onclick="seleccionarCantidad(50, this)">50</button>
+      <button onclick="seleccionarCantidad(100, this)">100</button>
+      <button onclick="seleccionarCantidad('custom', this)">
+        CUSTOM
+      </button>
+    </div>
+
+    <input id="cantidadPersonalizada"
+           type="number"
+           min="1"
+           step="1"
+           placeholder="Cantidad personalizada"
+           class="oculto">
+
+    <p id="cantidadActual">Cada lectura suma: 1</p>
+
+    <h4>Agregar producto</h4>
+
+    <input id="productoIngreso"
+           placeholder="SKU, código o nombre del producto"
+           autocomplete="off">
+
+    <button onclick="agregarManual()">
+      AGREGAR MANUALMENTE
+    </button>
+
+    <button onclick="abrirCamaraIngreso()">
+      ESCANEAR CÓDIGO
+    </button>
+
+    <button class="secundario" onclick="cerrarCamaraIngreso()">
+      CERRAR CÁMARA
+    </button>
+
+    <video id="videoIngreso" autoplay playsinline></video>
+
+    <p id="estadoIngreso"></p>
+
+    <h3 id="contadorIngreso">0 ítems diferentes</h3>
+
+    <div id="listaIngreso"></div>
+
+    <button class="secundario" onclick="deshacerIngreso()">
+      DESHACER ÚLTIMO
+    </button>
+
+    <button class="secundario" onclick="limpiarIngreso()">
+      LIMPIAR LISTA
+    </button>
+
+    <button disabled>
+      CONFIRMAR INGRESO (PRÓXIMAMENTE)
+    </button>
+  </div>
+</section>
+
+  
   <!-- MÓDULOS FUTUROS -->
   <section id="pantallaPendiente" class="oculto">
 
@@ -310,6 +457,7 @@
       "pantallaMenu",
       "pantallaStock",
       "pantallaPendiente"
+      "PantallaIngreso"
     ].forEach(pantalla => {
       document.getElementById(pantalla)
         .classList.add("oculto");
@@ -331,7 +479,10 @@
       mostrarPantalla("pantallaStock");
       return;
     }
-
+    if (modulo === "ingreso") {
+  mostrarPantalla("pantallaIngreso");
+  return;
+}
     const titulos = {
       ingreso: "Ingreso de mercadería",
       pedidos: "Armado de pedidos",
@@ -345,6 +496,7 @@
   }
 
   function volverMenu() {
+    cerrarCamaraIngreso();
     cerrarCamara();
     mostrarPantalla("pantallaMenu");
   }
@@ -491,6 +643,357 @@
     document.getElementById("video")
       .style.display = "none";
   }
+
+let cantidadIngreso = 1;
+let listaMercaderia = new Map();
+let historialIngreso = [];
+
+let streamIngreso = null;
+let detectorIngreso = null;
+let escaneandoIngreso = false;
+let codigoAnteriorIngreso = null;
+let ausenciasIngreso = 0;
+let procesandoIngreso = false;
+
+function seleccionarCantidad(valor, boton) {
+  document.querySelectorAll("#cantidadesIngreso button")
+    .forEach(b => b.classList.remove("cantidad-activa"));
+
+  boton.classList.add("cantidad-activa");
+
+  const personalizado =
+    document.getElementById("cantidadPersonalizada");
+
+  if (valor === "custom") {
+    personalizado.classList.remove("oculto");
+    cantidadIngreso = null;
+  } else {
+    personalizado.classList.add("oculto");
+    cantidadIngreso = valor;
+  }
+
+  actualizarCantidadIngreso();
+}
+
+function obtenerCantidadIngreso() {
+  const personalizada =
+    document.getElementById("cantidadPersonalizada");
+
+  const valor = cantidadIngreso === null
+    ? Number(personalizada.value)
+    : cantidadIngreso;
+
+  return Number.isSafeInteger(valor) && valor > 0
+    ? valor
+    : null;
+}
+
+function actualizarCantidadIngreso() {
+  const cantidad = obtenerCantidadIngreso();
+
+  document.getElementById("cantidadActual").textContent =
+    cantidad
+      ? "Cada lectura suma: " + cantidad
+      : "Ingresá una cantidad válida";
+}
+
+document.getElementById("cantidadPersonalizada")
+  .addEventListener("input", actualizarCantidadIngreso);
+
+function mostrarEstadoIngreso(mensaje) {
+  document.getElementById("estadoIngreso").textContent =
+    mensaje;
+}
+
+async function agregarManual() {
+  const campo = document.getElementById("productoIngreso");
+  const codigo = campo.value.trim();
+
+  if (await agregarProductoIngreso(codigo)) {
+    campo.value = "";
+  }
+}
+
+async function agregarProductoIngreso(codigo) {
+  if (!credencialGoogle) {
+    mostrarEstadoIngreso("Primero iniciá sesión.");
+    return false;
+  }
+
+  if (!document.getElementById("proveedorIngreso").value) {
+    mostrarEstadoIngreso("Seleccioná un proveedor.");
+    return false;
+  }
+
+  const cantidad = obtenerCantidadIngreso();
+
+  if (!cantidad) {
+    mostrarEstadoIngreso("Cantidad inválida.");
+    return false;
+  }
+
+  if (!codigo) {
+    mostrarEstadoIngreso("Ingresá un producto.");
+    return false;
+  }
+
+  if (procesandoIngreso) return false;
+
+  procesandoIngreso = true;
+  mostrarEstadoIngreso("Buscando producto...");
+
+  try {
+    const respuesta = await fetch(API + "/stock", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        credential: credencialGoogle,
+        codigo
+      })
+    });
+
+    const datos = await respuesta.json();
+
+    if (!respuesta.ok || !datos.ok) {
+      if (respuesta.status === 401) {
+        credencialGoogle = null;
+        cerrarCamaraIngreso();
+        mostrarEstadoIngreso(
+          "Sesión vencida. Volvé a iniciar sesión."
+        );
+        return false;
+      }
+
+      if (respuesta.status !== 404) {
+        mostrarEstadoIngreso(
+          datos.error || "No se pudo consultar el producto."
+        );
+        return false;
+      }
+
+      // Producto nuevo, pendiente de identificar.
+      const nombre = codigo.trim();
+      const clave = "NUEVO:" + nombre.toUpperCase();
+
+      acumularIngreso(clave, {
+        sku: "",
+        descripcion: nombre,
+        nuevo: true
+      }, cantidad);
+
+      mostrarEstadoIngreso(
+        "Producto nuevo agregado, pendiente de identificar."
+      );
+
+      return true;
+    }
+
+    const producto = datos.producto;
+    const clave = "SKU:" + producto.sku.toUpperCase();
+
+    acumularIngreso(clave, {
+      sku: producto.sku,
+      descripcion: producto.descripcion,
+      nuevo: false
+    }, cantidad);
+
+    mostrarEstadoIngreso(
+      producto.sku + ": +" + cantidad
+    );
+
+    return true;
+
+  } catch (error) {
+    console.error(error);
+    mostrarEstadoIngreso("Error de conexión.");
+    return false;
+  } finally {
+    procesandoIngreso = false;
+  }
+}
+
+function acumularIngreso(clave, producto, cantidad) {
+  const anterior = listaMercaderia.get(clave);
+
+  if (anterior) {
+    anterior.cantidad += cantidad;
+  } else {
+    listaMercaderia.set(clave, {
+      ...producto,
+      cantidad
+    });
+  }
+
+  historialIngreso.push({ clave, cantidad });
+  renderizarIngreso();
+}
+
+function renderizarIngreso() {
+  const lista = document.getElementById("listaIngreso");
+  lista.replaceChildren();
+
+  document.getElementById("contadorIngreso").textContent =
+    listaMercaderia.size + " ítems diferentes";
+
+  for (const producto of listaMercaderia.values()) {
+    const fila = document.createElement("div");
+    fila.className = "fila-ingreso";
+
+    const info = document.createElement("div");
+    const nombre = document.createElement("div");
+    nombre.textContent = producto.descripcion;
+
+    const sku = document.createElement("small");
+    sku.textContent = producto.nuevo
+      ? "NUEVO - Pendiente de identificar"
+      : producto.sku;
+
+    info.append(nombre, sku);
+
+    const cantidad = document.createElement("strong");
+    cantidad.textContent = producto.cantidad;
+
+    fila.append(info, cantidad);
+    lista.appendChild(fila);
+  }
+}
+
+function deshacerIngreso() {
+  const ultimo = historialIngreso.pop();
+
+  if (!ultimo) {
+    mostrarEstadoIngreso("No hay lecturas para deshacer.");
+    return;
+  }
+
+  const producto = listaMercaderia.get(ultimo.clave);
+
+  if (!producto) return;
+
+  producto.cantidad -= ultimo.cantidad;
+
+  if (producto.cantidad <= 0) {
+    listaMercaderia.delete(ultimo.clave);
+  }
+
+  renderizarIngreso();
+  mostrarEstadoIngreso("Última carga deshecha.");
+}
+
+function limpiarIngreso() {
+  if (!confirm("¿Eliminar toda la lista de ingreso?")) {
+    return;
+  }
+
+  listaMercaderia.clear();
+  historialIngreso = [];
+  renderizarIngreso();
+  mostrarEstadoIngreso("Lista vaciada.");
+}
+
+async function abrirCamaraIngreso() {
+  if (escaneandoIngreso) return;
+
+  if (!credencialGoogle) {
+    mostrarEstadoIngreso("Primero iniciá sesión.");
+    return;
+  }
+
+  if (!document.getElementById("proveedorIngreso").value) {
+    mostrarEstadoIngreso("Seleccioná un proveedor.");
+    return;
+  }
+
+  if (!("BarcodeDetector" in window)) {
+    mostrarEstadoIngreso("Navegador sin BarcodeDetector.");
+    return;
+  }
+
+  try {
+    detectorIngreso = new BarcodeDetector({
+      formats: [
+        "ean_13", "ean_8", "code_128",
+        "code_39", "upc_a"
+      ]
+    });
+
+    streamIngreso =
+      await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false
+      });
+
+    const video = document.getElementById("videoIngreso");
+    video.srcObject = streamIngreso;
+    video.style.display = "block";
+    await video.play();
+
+    escaneandoIngreso = true;
+    codigoAnteriorIngreso = null;
+    ausenciasIngreso = 0;
+
+    mostrarEstadoIngreso("Escáner activo.");
+    detectarIngreso();
+
+  } catch (error) {
+    cerrarCamaraIngreso();
+    mostrarEstadoIngreso(
+      "No se pudo abrir la cámara: " + error.message
+    );
+  }
+}
+
+async function detectarIngreso() {
+  if (!escaneandoIngreso) return;
+
+  try {
+    const codigos = await detectorIngreso.detect(
+      document.getElementById("videoIngreso")
+    );
+
+    if (codigos.length === 0) {
+      ausenciasIngreso++;
+
+      if (ausenciasIngreso >= 3) {
+        codigoAnteriorIngreso = null;
+      }
+    } else {
+      ausenciasIngreso = 0;
+
+      const codigo = codigos[0].rawValue;
+
+      if (
+        codigo !== codigoAnteriorIngreso &&
+        !procesandoIngreso
+      ) {
+        codigoAnteriorIngreso = codigo;
+        await agregarProductoIngreso(codigo);
+      }
+    }
+
+  } catch (error) {
+    console.error(error);
+  }
+
+  if (escaneandoIngreso) {
+    setTimeout(detectarIngreso, 250);
+  }
+}
+
+function cerrarCamaraIngreso() {
+  escaneandoIngreso = false;
+
+  if (streamIngreso) {
+    streamIngreso.getTracks().forEach(track => track.stop());
+    streamIngreso = null;
+  }
+
+  const video = document.getElementById("videoIngreso");
+  video.style.display = "none";
+  video.srcObject = null;
+}
 
   window.addEventListener("load", iniciarGoogle);
 </script>
