@@ -121,13 +121,62 @@ input[readonly] { background: #e9edf0; }
   color: #176b40;
   white-space: pre-line;
 }
+
+/* BUSCADOR INTELIGENTE */
+.contenedor-busqueda {
+  position: relative;
+}
+#sugerenciasIngreso {
+  background: white;
+  border: 1px solid #cbd5dc;
+  border-radius: 10px;
+  max-height: 330px;
+  overflow-y: auto;
+  margin: 0 0 12px;
+  box-shadow: 0 5px 12px rgba(0,0,0,.12);
+}
+.sugerencia {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 13px;
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid #e5e9ec;
+  border-radius: 0;
+  background: white;
+  color: #263238;
+}
+.sugerencia:active {
+  background: #d9eee0;
+}
+.sugerencia .sku {
+  font-size: 17px;
+  font-weight: bold;
+  color: #176b40;
+}
+.sugerencia .descripcion {
+  display: block;
+  font-size: 14px;
+  margin-top: 4px;
+}
+.sugerencia .detalle {
+  display: block;
+  font-size: 12px;
+  margin-top: 5px;
+  color: #607d8b;
+}
+.mensaje-busqueda {
+  padding: 12px;
+  font-size: 14px;
+  color: #607d8b;
+}
 </style>
 </head>
 
 <body>
 <h2>POS DEPO</h2>
 
-<!-- INICIO DE SESIÓN -->
 <section id="login" class="panel">
   <h3>Acceso al depósito</h3>
   <p>Ingresá con tu cuenta de Google autorizada.</p>
@@ -135,7 +184,6 @@ input[readonly] { background: #e9edf0; }
   <p id="estadoLogin"></p>
 </section>
 
-<!-- MENÚ PRINCIPAL -->
 <section id="pantallaMenu" class="oculto">
   <p id="usuarioActual"></p>
   <div class="menu">
@@ -160,7 +208,6 @@ input[readonly] { background: #e9edf0; }
   </div>
 </section>
 
-<!-- CONSULTAR STOCK -->
 <section id="pantallaStock" class="oculto">
   <button class="secundario" onclick="volverMenu()">
     ← VOLVER AL MENÚ
@@ -180,7 +227,6 @@ input[readonly] { background: #e9edf0; }
   </div>
 </section>
 
-<!-- INGRESO DE MERCADERÍA -->
 <section id="pantallaIngreso" class="oculto">
   <button class="secundario" onclick="volverMenu()">
     ← VOLVER AL MENÚ
@@ -224,9 +270,18 @@ input[readonly] { background: #e9edf0; }
     <p id="cantidadActual">Cada lectura suma: 1</p>
 
     <h4>Agregar producto</h4>
-    <input id="productoIngreso"
-      placeholder="SKU o código de barras"
-      autocomplete="off">
+    <p class="nota">
+      Escribí parte del SKU o descripción para ver sugerencias.
+    </p>
+
+    <div class="contenedor-busqueda">
+      <input id="productoIngreso"
+        placeholder="Buscar SKU o descripción"
+        autocomplete="off"
+        oninput="programarBusquedaIngreso()">
+
+      <div id="sugerenciasIngreso" class="oculto"></div>
+    </div>
 
     <button onclick="agregarManual()">
       AGREGAR MANUALMENTE
@@ -257,7 +312,6 @@ input[readonly] { background: #e9edf0; }
   </div>
 </section>
 
-<!-- MÓDULOS FUTUROS -->
 <section id="pantallaPendiente" class="oculto">
   <button class="secundario" onclick="volverMenu()">
     ← VOLVER AL MENÚ
@@ -299,6 +353,10 @@ let procesandoIngreso = false;
 let confirmandoIngreso = false;
 let operacionPendienteId = null;
 let operacionPendienteDatos = null;
+
+// VARIABLES DEL BUSCADOR INTELIGENTE
+let temporizadorBusqueda = null;
+let numeroBusqueda = 0;
 
 // AUTENTICACIÓN GOOGLE
 
@@ -368,6 +426,7 @@ function sesionVencida() {
   rolUsuario = null;
   cerrarCamara();
   cerrarCamaraIngreso();
+  ocultarSugerencias();
   mostrarPantalla("pantallaMenu");
   document.getElementById("pantallaMenu")
     .classList.add("oculto");
@@ -402,6 +461,7 @@ function abrirModulo(modulo) {
 
   cerrarCamara();
   cerrarCamaraIngreso();
+  ocultarSugerencias();
 
   if (modulo === "stock") {
     mostrarPantalla("pantallaStock");
@@ -428,6 +488,7 @@ function abrirModulo(modulo) {
 function volverMenu() {
   cerrarCamara();
   cerrarCamaraIngreso();
+  ocultarSugerencias();
   mostrarPantalla("pantallaMenu");
 }
 
@@ -582,6 +643,199 @@ function cerrarCamara() {
   video.srcObject = null;
 }
 
+// BUSCADOR INTELIGENTE
+
+function ocultarSugerencias() {
+  clearTimeout(temporizadorBusqueda);
+  numeroBusqueda++;
+
+  const contenedor =
+    document.getElementById("sugerenciasIngreso");
+
+  contenedor.classList.add("oculto");
+  contenedor.replaceChildren();
+}
+
+function mensajeSugerencias(mensaje) {
+  const contenedor =
+    document.getElementById("sugerenciasIngreso");
+
+  contenedor.replaceChildren();
+
+  const texto = document.createElement("div");
+  texto.className = "mensaje-busqueda";
+  texto.textContent = mensaje;
+
+  contenedor.appendChild(texto);
+  contenedor.classList.remove("oculto");
+}
+
+function programarBusquedaIngreso() {
+  clearTimeout(temporizadorBusqueda);
+
+  const consulta = document
+    .getElementById("productoIngreso").value.trim();
+
+  const solicitud = ++numeroBusqueda;
+
+  if (confirmandoIngreso || operacionPendienteDatos) {
+    ocultarSugerencias();
+    return;
+  }
+
+  if (consulta.length < 2) {
+    ocultarSugerencias();
+    return;
+  }
+
+  mensajeSugerencias("Buscando productos...");
+
+  // Espera un instante para evitar una consulta por tecla.
+  temporizadorBusqueda = setTimeout(() => {
+    buscarSugerencias(consulta, solicitud);
+  }, 300);
+}
+
+async function buscarSugerencias(consulta, solicitud) {
+  if (!credencialGoogle) return;
+
+  try {
+    const respuesta = await fetch(
+      API + "/buscar-productos",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          credential: credencialGoogle,
+          busqueda: consulta
+        })
+      }
+    );
+
+    const datos = await respuesta.json();
+
+    // Ignorar respuestas de búsquedas anteriores.
+    if (solicitud !== numeroBusqueda) return;
+
+    if (!respuesta.ok || !datos.ok) {
+      if (respuesta.status === 401) {
+        sesionVencida();
+        return;
+      }
+
+      mensajeSugerencias(
+        datos.error || "No se pudo buscar."
+      );
+      return;
+    }
+
+    mostrarSugerencias(datos.productos || []);
+
+  } catch (error) {
+    console.error(error);
+
+    if (solicitud === numeroBusqueda) {
+      mensajeSugerencias(
+        "No se pudieron cargar las sugerencias."
+      );
+    }
+  }
+}
+
+function mostrarSugerencias(productos) {
+  const contenedor =
+    document.getElementById("sugerenciasIngreso");
+
+  contenedor.replaceChildren();
+
+  if (productos.length === 0) {
+    mensajeSugerencias(
+      "Sin coincidencias. Si es un producto nuevo, " +
+      "podés agregar su código manualmente."
+    );
+    return;
+  }
+
+  for (const producto of productos) {
+    const boton = document.createElement("button");
+    boton.type = "button";
+    boton.className = "sugerencia";
+
+    const sku = document.createElement("span");
+    sku.className = "sku";
+    sku.textContent = producto.sku;
+
+    const descripcion = document.createElement("span");
+    descripcion.className = "descripcion";
+    descripcion.textContent = producto.descripcion;
+
+    const detalle = document.createElement("span");
+    detalle.className = "detalle";
+
+    detalle.textContent = [
+      producto.categoria,
+      producto.proveedor
+    ].filter(Boolean).join(" · ");
+
+    boton.append(sku, descripcion, detalle);
+
+    boton.addEventListener("click", () => {
+      seleccionarSugerencia(producto);
+    });
+
+    contenedor.appendChild(boton);
+  }
+
+  contenedor.classList.remove("oculto");
+}
+
+function seleccionarSugerencia(producto) {
+  if (confirmandoIngreso || operacionPendienteDatos) {
+    mostrarEstadoIngreso(
+      "Primero resolvé la confirmación pendiente."
+    );
+    return;
+  }
+
+  if (!document.getElementById("proveedorIngreso")
+      .value.trim()) {
+    mostrarEstadoIngreso("Ingresá el proveedor.");
+    return;
+  }
+
+  const cantidad = obtenerCantidadIngreso();
+
+  if (!cantidad) {
+    mostrarEstadoIngreso("Cantidad inválida.");
+    return;
+  }
+
+  if (procesandoIngreso) return;
+
+  // Se agrega directamente el producto seleccionado.
+  // No hace falta consultar nuevamente el SKU.
+  const clave = "SKU:" + producto.sku.toUpperCase();
+
+  const agregado = acumularIngreso(clave, {
+    sku: producto.sku,
+    codigoBarras: producto.sku,
+    descripcion: producto.descripcion || producto.sku,
+    nuevo: false
+  }, cantidad);
+
+  if (!agregado) return;
+
+  document.getElementById("productoIngreso").value = "";
+  ocultarSugerencias();
+
+  mostrarEstadoIngreso(
+    producto.sku + ": +" + cantidad +
+    "\n" + producto.descripcion
+  );
+}
+
 // CANTIDADES DE INGRESO
 
 function seleccionarCantidad(valor, boton) {
@@ -646,6 +900,8 @@ function mostrarEstadoIngreso(mensaje) {
 async function agregarManual() {
   const campo = document.getElementById("productoIngreso");
   const codigo = campo.value.trim();
+
+  ocultarSugerencias();
 
   if (await agregarProductoIngreso(codigo)) {
     campo.value = "";
@@ -726,12 +982,14 @@ async function agregarProductoIngreso(codigo) {
 
       const clave = "SKU:" + skuNuevo.toUpperCase();
 
-      acumularIngreso(clave, {
+      const agregado = acumularIngreso(clave, {
         sku: skuNuevo,
         codigoBarras: skuNuevo,
         descripcion: descripcion.trim(),
         nuevo: true
       }, cantidad);
+
+      if (!agregado) return false;
 
       mostrarEstadoIngreso(
         "Producto nuevo agregado: " + skuNuevo
@@ -743,12 +1001,14 @@ async function agregarProductoIngreso(codigo) {
     const producto = datos.producto;
     const clave = "SKU:" + producto.sku.toUpperCase();
 
-    acumularIngreso(clave, {
+    const agregado = acumularIngreso(clave, {
       sku: producto.sku,
       codigoBarras: codigo,
       descripcion: producto.descripcion || producto.sku,
       nuevo: false
     }, cantidad);
+
+    if (!agregado) return false;
 
     mostrarEstadoIngreso(
       producto.sku + ": +" + cantidad
@@ -775,8 +1035,10 @@ function acumularIngreso(clave, producto, cantidad) {
     const total = anterior.cantidad + cantidad;
 
     if (!Number.isSafeInteger(total)) {
-      mostrarEstadoIngreso("Cantidad acumulada demasiado grande.");
-      return;
+      mostrarEstadoIngreso(
+        "Cantidad acumulada demasiado grande."
+      );
+      return false;
     }
 
     anterior.cantidad = total;
@@ -789,6 +1051,7 @@ function acumularIngreso(clave, producto, cantidad) {
 
   historialIngreso.push({ clave, cantidad });
   renderizarIngreso();
+  return true;
 }
 
 function renderizarIngreso() {
@@ -866,12 +1129,12 @@ function limpiarIngreso() {
 
   listaMercaderia.clear();
   historialIngreso = [];
+  ocultarSugerencias();
   renderizarIngreso();
   mostrarEstadoIngreso("Lista vaciada.");
 }
 
 // CONFIRMAR REMITO
-// ÚNICAMENTE GUARDA EN INGRESOS, NO MODIFICA STOCK
 
 async function confirmarIngreso() {
   if (confirmandoIngreso) return;
@@ -951,7 +1214,6 @@ async function confirmarIngreso() {
 
     if (!aprobado) return;
 
-    // El ID se reutiliza si hay que reintentar.
     operacionPendienteId =
       crypto.randomUUID().replaceAll("-", "");
 
@@ -962,6 +1224,7 @@ async function confirmarIngreso() {
     };
   }
 
+  ocultarSugerencias();
   cerrarCamaraIngreso();
   confirmandoIngreso = true;
 
@@ -1026,6 +1289,7 @@ async function confirmarIngreso() {
     renderizarIngreso();
 
     document.getElementById("remitoIngreso").value = "";
+    document.getElementById("productoIngreso").value = "";
     actualizarFechaIngreso();
 
     mostrarEstadoIngreso(
@@ -1214,6 +1478,7 @@ window.addEventListener("load", () => {
 </script>
 </body>
 </html>
+
 
 
 
