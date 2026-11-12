@@ -177,6 +177,9 @@ input[readonly] { background: #e9edf0; }
   font-size: 14px;
   color: #607d8b;
 }
+/* Memoria compacta: una sola línea debajo de cada cámara */
+.memoria-lecturas { font-size:13px; font-weight:bold; color:#176b40; white-space:nowrap; overflow-x:auto; margin:5px 0; min-height:17px; }
+.memoria-lecturas.error { color:#b42318; }
 </style>
 </head>
 
@@ -229,6 +232,7 @@ input[readonly] { background: #e9edf0; }
       CERRAR CÁMARA
     </button>
     <video id="video" autoplay playsinline></video>
+    <div id="memoriaStock" class="memoria-lecturas" aria-live="polite"></div>
     <div id="resultado">Esperando producto...</div>
   </div>
 </section>
@@ -300,6 +304,7 @@ input[readonly] { background: #e9edf0; }
     </button>
 
     <video id="videoIngreso" autoplay playsinline></video>
+    <div id="memoriaIngreso" class="memoria-lecturas" aria-live="polite"></div>
     <p id="estadoIngreso"></p>
 
     <h3 id="contadorIngreso">0 ítems diferentes</h3>
@@ -344,6 +349,7 @@ input[readonly] { background: #e9edf0; }
       <button onclick="abrirCamaraBusquedaExterna()">📷 ESCANEAR CÓDIGO</button>
       <button class="secundario" onclick="cerrarCamaraBusquedaExterna()">CERRAR CÁMARA</button>
       <video id="videoBusquedaExterna" autoplay playsinline></video>
+    <div id="memoriaBusquedaExterna" class="memoria-lecturas" aria-live="polite"></div>
       <p id="estadoCamaraBusquedaExterna" class="nota"></p>
       <div id="resultadoProductoExterno"></div>
     </div>
@@ -387,6 +393,7 @@ input[readonly] { background: #e9edf0; }
     <button onclick="abrirCamaraExterna()">ESCANEAR CÓDIGO</button>
     <button class="secundario" onclick="cerrarCamaraExterna()">CERRAR CÁMARA</button>
     <video id="videoExterno" autoplay playsinline></video>
+    <div id="memoriaExterno" class="memoria-lecturas" aria-live="polite"></div>
     <p id="estadoExternoCarga" class="nota"></p>
     <h3 id="contadorExternoCarga">0 productos diferentes</h3>
     <div id="listaExternoCarga"></div>
@@ -478,6 +485,59 @@ let operacionPendienteDatos = null;
 // VARIABLES DEL BUSCADOR INTELIGENTE
 let temporizadorBusqueda = null;
 let numeroBusqueda = 0;
+
+// Confirmación de lectura (no modifica los listados ni el stock).
+const memoriasEscaner = {stock:[], ingreso:[], externo:[], busqueda:[]};
+let audioEscaner = null;
+function habilitarAudioEscaner() {
+  try {
+    const Audio = window.AudioContext || window.webkitAudioContext;
+    if (!Audio) return;
+    if (!audioEscaner) audioEscaner = new Audio();
+    if (audioEscaner.state === 'suspended') audioEscaner.resume().catch(()=>{});
+  } catch(e) { console.debug('Audio no disponible',e); }
+}
+function sonarEscaner(error=false) {
+  try {
+    habilitarAudioEscaner();
+    if (!audioEscaner || audioEscaner.state !== 'running') return;
+    const inicio=audioEscaner.currentTime;
+    (error ? [0,.17] : [0]).forEach((retardo,i)=>{
+      const osc=audioEscaner.createOscillator(), gan=audioEscaner.createGain();
+      osc.type='sine'; osc.frequency.value=error ? 330 : 980;
+      gan.gain.setValueAtTime(.0001,inicio+retardo);
+      gan.gain.exponentialRampToValueAtTime(.22,inicio+retardo+.012);
+      gan.gain.exponentialRampToValueAtTime(.0001,inicio+retardo+.115);
+      osc.connect(gan);gan.connect(audioEscaner.destination);
+      osc.start(inicio+retardo);osc.stop(inicio+retardo+.125);
+    });
+  } catch(e) { console.debug('Sonido no disponible',e); }
+}
+function memoriaLectura(tipo,sku,cantidad='') {
+  const ids={stock:'memoriaStock',ingreso:'memoriaIngreso',externo:'memoriaExterno',busqueda:'memoriaBusquedaExterna'};
+  const lista=memoriasEscaner[tipo]; if(!lista) return;
+  lista.unshift(String(sku)+(cantidad ? ' '+cantidad : ''));
+  if(lista.length>3)lista.length=3;
+  const el=document.getElementById(ids[tipo]);
+  if(el){el.textContent=lista.join(' | ');el.classList.remove('error');}
+  sonarEscaner(false);
+}
+function errorLectura(tipo,campoId,mensaje) {
+  const ids={stock:'memoriaStock',ingreso:'memoriaIngreso',externo:'memoriaExterno',busqueda:'memoriaBusquedaExterna'};
+  const el=document.getElementById(ids[tipo]);
+  if(el){el.textContent='⚠ '+mensaje;el.classList.add('error');}
+  sonarEscaner(true);
+  const campo=document.getElementById(campoId);
+  if(campo){campo.scrollIntoView({behavior:'smooth',block:'center'});}
+}
+function reiniciarMemoria(tipo) {
+  const ids={stock:'memoriaStock',ingreso:'memoriaIngreso',externo:'memoriaExterno',busqueda:'memoriaBusquedaExterna'};
+  memoriasEscaner[tipo]=[];
+  const el=document.getElementById(ids[tipo]);
+  if(el){el.textContent='';el.classList.remove('error');}
+}
+// Habilitar sonido por gesto real del usuario (restricción de Chrome/Android).
+document.addEventListener('pointerdown',habilitarAudioEscaner,{passive:true});
 
 // AUTENTICACIÓN GOOGLE
 
@@ -961,6 +1021,7 @@ async function buscarProductoExterno() {
       const aviso = document.createElement("p");
       aviso.textContent = "Este producto no tiene existencias registradas en esta camioneta.";
       resultado.appendChild(aviso);
+      errorLectura("busqueda","codigoProductoExterno","Sin existencias en esta camioneta");
       return;
     }
     for (const c of cajones) {
@@ -974,8 +1035,10 @@ async function buscarProductoExterno() {
     const total = document.createElement("p");
     total.textContent = "Total en esta camioneta: " + deposito.cantidad + " unidades";
     resultado.appendChild(total);
+    memoriaLectura("busqueda",producto.sku);
   } catch (error) {
     resultado.textContent = error.message;
+    errorLectura("busqueda","codigoProductoExterno",error.message);
   }
 }
 
@@ -1002,6 +1065,7 @@ function estadoCargaExterna(mensaje) {
 function reiniciarCargaExterna() {
   if (pendienteExternoDatos) return;
   listaExterna.clear(); historialExterno = [];
+  reiniciarMemoria("externo");
   document.getElementById("productoExternoCarga").value = "";
   ocultarSugerenciasExternoCarga();
   renderizarCargaExterna(); estadoCargaExterna("");
@@ -1155,7 +1219,7 @@ function programarBusquedaExternaCarga() {
 function acumularExterno(p) {
   if (pendienteExternoDatos || guardandoExterno) return false;
   const cantidad = obtenerCantidadExterna();
-  if (cantidad === null) { estadoCargaExterna('Cantidad inválida.'); return false; }
+  if (cantidad === null) { estadoCargaExterna('Cantidad inválida.'); errorLectura('externo','productoExternoCarga','Cantidad inválida'); return false; }
   const clave = p.sku.trim().toUpperCase();
   const anterior = listaExterna.get(clave);
   const total = modoExterno === 'RECONTAR' ? cantidad : (anterior?.cantidad || 0) + cantidad;
@@ -1164,6 +1228,7 @@ function acumularExterno(p) {
   historialExterno.push({ clave, cantidad, anterior: anterior ? {...anterior} : null });
   renderizarCargaExterna();
   estadoCargaExterna(p.sku + (modoExterno === 'RECONTAR' ? ': conteo final ' : ': +') + cantidad);
+  memoriaLectura("externo",p.sku,(modoExterno === "DEVOLVER" ? "−" : "+")+cantidad);
   return true;
 }
 async function agregarManualExterno() {
@@ -1175,11 +1240,12 @@ async function agregarManualExterno() {
     const {respuesta, datos} = await consultarProducto(codigo);
     if (!respuesta.ok || !datos.ok) {
       if (respuesta.status === 401) sesionVencida();
-      estadoCargaExterna(datos.error || 'Producto no encontrado. Debe existir en PARAMETROS.'); return;
+      estadoCargaExterna(datos.error || 'Producto no encontrado. Debe existir en PARAMETROS.');
+      errorLectura('externo','productoExternoCarga',datos.error || 'Producto no encontrado'); return;
     }
     const p=datos.producto;
     if (acumularExterno(p)) campo.value='';
-  } catch(e) { estadoCargaExterna('Error al consultar: '+e.message); }
+  } catch(e) { estadoCargaExterna('Error al consultar: '+e.message); errorLectura('externo','productoExternoCarga',e.message); }
   finally { procesandoExterno=false; }
 }
 function renderizarCargaExterna() {
@@ -1205,6 +1271,7 @@ function deshacerExternoCarga() {
     p.cantidad-=u.cantidad; if (p.cantidad<=0) listaExterna.delete(u.clave);
   }
   renderizarCargaExterna(); estadoCargaExterna('Última lectura deshecha.');
+  memoriasEscaner.externo.shift(); document.getElementById('memoriaExterno').textContent=memoriasEscaner.externo.join(' | ');
 }
 function limpiarExternoCarga() {
   if (pendienteExternoDatos || guardandoExterno) return;
@@ -1343,6 +1410,7 @@ async function buscar() {
       }
       resultado.textContent =
         datos.error || "Error al buscar";
+      errorLectura("stock","codigo",datos.error || "Producto no encontrado");
       return;
     }
 
@@ -1353,6 +1421,7 @@ async function buscar() {
         (d.cajones?.length ? " (" + d.cajones.map(c =>
           `cajón ${c.numero}: ${c.cantidad}`).join(", ") + ")" : ""))
       .join("\n");
+    memoriaLectura("stock",producto.sku);
     resultado.textContent =
       "SKU: " + producto.sku + "\n" +
       "Descripción: " + producto.descripcion + "\n" +
@@ -1363,6 +1432,7 @@ async function buscar() {
     console.error(error);
     resultado.textContent =
       "Error de conexión con el servidor";
+    errorLectura("stock","codigo","Error de conexión");
   }
 }
 
@@ -1759,6 +1829,7 @@ async function agregarProductoIngreso(codigo) {
         mostrarEstadoIngreso(
           datos.error || "No se pudo consultar el producto."
         );
+        errorLectura("ingreso","productoIngreso",datos.error || "Error al consultar");
         return false;
       }
 
@@ -1772,6 +1843,7 @@ async function agregarProductoIngreso(codigo) {
       );
 
       if (!descripcion || !descripcion.trim()) {
+        errorLectura("ingreso","productoIngreso","Producto no registrado");
         mostrarEstadoIngreso(
           "El producto nuevo necesita una descripción."
         );
@@ -1792,6 +1864,7 @@ async function agregarProductoIngreso(codigo) {
       mostrarEstadoIngreso(
         "Producto nuevo agregado: " + skuNuevo
       );
+      memoriaLectura("ingreso",skuNuevo,"+"+cantidad);
 
       return true;
     }
@@ -1811,12 +1884,14 @@ async function agregarProductoIngreso(codigo) {
     mostrarEstadoIngreso(
       producto.sku + ": +" + cantidad
     );
+    memoriaLectura("ingreso",producto.sku,"+"+cantidad);
 
     return true;
 
   } catch (error) {
     console.error(error);
     mostrarEstadoIngreso("Error de conexión.");
+    errorLectura("ingreso","productoIngreso","Error de conexión");
     return false;
 
   } finally {
@@ -1911,6 +1986,7 @@ function deshacerIngreso() {
 
   renderizarIngreso();
   mostrarEstadoIngreso("Última carga deshecha.");
+  memoriasEscaner.ingreso.shift(); document.getElementById("memoriaIngreso").textContent=memoriasEscaner.ingreso.join(" | ");
 }
 
 function limpiarIngreso() {
@@ -1927,6 +2003,7 @@ function limpiarIngreso() {
 
   listaMercaderia.clear();
   historialIngreso = [];
+  reiniciarMemoria("ingreso");
   ocultarSugerencias();
   renderizarIngreso();
   mostrarEstadoIngreso("Lista vaciada.");
@@ -2214,7 +2291,8 @@ async function detectarIngreso() {
         !procesandoIngreso
       ) {
         codigoAnteriorIngreso = codigo;
-        await agregarProductoIngreso(codigo);
+        document.getElementById("productoIngreso").value = codigo;
+        if(await agregarProductoIngreso(codigo)) document.getElementById("productoIngreso").value = "";
       }
     }
 
