@@ -244,6 +244,8 @@ input[readonly] { background: #e9edf0; }
   <div class="panel">
     <h3>Ingreso de mercadería</h3>
 
+    <div id="inicioRecepcion">
+    <p class="nota">Antes de iniciar, indicá los datos del remito y el control de bultos.</p>
     <label for="proveedorIngreso">Proveedor</label>
     <input id="proveedorIngreso" type="text"
       placeholder="Nombre del proveedor"
@@ -258,6 +260,25 @@ input[readonly] { background: #e9edf0; }
     <input id="fechaIngreso" type="text"
       readonly tabindex="-1">
 
+    <h4>Control de bultos</h4>
+    <div class="cantidades" style="grid-template-columns:repeat(2,1fr)">
+      <button id="botonBultosDefinidos" class="cantidad-activa" onclick="elegirControlBultos('DEFINIDO')">CARGAR CANTIDAD</button>
+      <button id="botonBultosIndefinidos" onclick="elegirControlBultos('INDEFINIDO')">INDEFINIDO</button>
+    </div>
+    <div id="campoBultos"><label for="bultosDeclarados">Bultos declarados por el transporte</label>
+      <input id="bultosDeclarados" type="number" inputmode="numeric" min="1" step="1" placeholder="Ej.: 72"></div>
+    <button id="botonIniciarRecepcion" onclick="iniciarRecepcion()">INICIAR REMITO</button>
+    </div>
+    <div id="contenidoRecepcion" class="oculto">
+      <div id="cabeceraRecepcion" class="externo-fila"></div>
+      <label for="numeroCajaIngreso">N.º de caja (editable, en cualquier orden)</label>
+      <input id="numeroCajaIngreso" type="text" maxlength="100" inputmode="text" placeholder="Ej.: 18 o A-018" oninput="validarCambioCaja()">
+      <div id="estadoCajaIngreso" class="nota"></div>
+      <button id="botonGuardarCaja" onclick="finalizarCaja()">FINALIZAR CAJA Y GUARDAR</button>
+      <button class="secundario" onclick="mostrarCajasGuardadas()">VER CAJAS GUARDADAS / CORREGIR</button>
+      <div id="listaCajasGuardadas"></div>
+      <button class="secundario" onclick="ajustarControlBultos()">MODIFICAR BULTOS DECLARADOS</button>
+      <button class="secundario" onclick="finalizarRemitoCajas()">FINALIZAR REMITO COMPLETO</button>
     <h4>Modalidad de carga</h4>
     <div class="cantidades" style="grid-template-columns:repeat(2,1fr)">
       <button id="modoIngresoRapido" class="cantidad-activa" onclick="cambiarModoIngreso('RAPIDO')">⚡ RÁPIDO</button>
@@ -333,10 +354,8 @@ input[readonly] { background: #e9edf0; }
     <button class="secundario" onclick="limpiarIngreso()">
       LIMPIAR LISTA
     </button>
-    <button id="botonConfirmarIngreso"
-      onclick="confirmarIngreso()">
-      CONFIRMAR INGRESO
-    </button>
+    <p class="nota">Cada caja se guarda por separado. No uses CONFIRMAR INGRESO del sistema anterior.</p>
+    </div>
   </div>
 </section>
 
@@ -484,6 +503,14 @@ let stream = null;
 let detector = null;
 let escaneando = false;
 
+let recepcionActual=null;
+let controlBultos='DEFINIDO';
+let revisionCajaActual=0;
+let numeroCajaBloqueado='';
+let guardandoCaja=false;
+let operacionCajaPendiente=null;
+let resumenRecepcion=null;
+let cacheProductosRecepcion=new Map();
 let cantidadIngreso = 1;
 let modoIngreso = 'RAPIDO';
 let productoSimpleIngreso = null;
@@ -684,6 +711,7 @@ function abrirModulo(modulo) {
   if (modulo === "ingreso") {
     actualizarFechaIngreso();
     mostrarPantalla("pantallaIngreso");
+    restaurarRecepcionLocal();
     return;
   }
 
@@ -1426,6 +1454,8 @@ async function buscar() {
       if(agregado){memoriaLectura('ingreso',existenteIngreso.sku,'+'+cantidad);mostrarEstadoIngreso(existenteIngreso.sku+': +'+cantidad);}
       return agregado;
     }
+    const cache=cacheProductosRecepcion.get(String(codigo).trim().toUpperCase());
+    if(cache){const agregado=acumularIngreso("SKU:"+cache.sku.toUpperCase(),cache,cantidad);if(agregado){memoriaLectura("ingreso",cache.sku,"+"+cantidad);mostrarEstadoIngreso(cache.sku+": +"+cantidad);}return agregado;}
     const { respuesta, datos } =
       await consultarProducto(codigo);
 
@@ -1752,7 +1782,7 @@ function cancelarSimpleIngreso() {
   document.getElementById('simpleIngresoCantidad').value='';
 }
 async function resolverSimpleIngreso(codigo, productoSugerido=null) {
-  if(modoIngreso!=='SIMPLE' || procesandoIngreso || confirmandoIngreso || operacionPendienteDatos) return false;
+  if(modoIngreso!=='SIMPLE' || !recepcionActual || guardandoCaja || operacionCajaPendiente || procesandoIngreso || confirmandoIngreso || operacionPendienteDatos) return false;
   if(!credencialGoogle || !document.getElementById('proveedorIngreso').value.trim()) {
     mostrarEstadoIngreso('Ingresá el proveedor y verificá la sesión.');return false;
   }
@@ -1765,6 +1795,7 @@ async function resolverSimpleIngreso(codigo, productoSugerido=null) {
       const existente=[...listaMercaderia.values()].find(p=>p.sku.toUpperCase()===codigo.toUpperCase() || String(p.codigoBarras||'').toUpperCase()===codigo.toUpperCase());
       if(existente) producto={...existente};
     }
+    if(!producto && cacheProductosRecepcion.has(codigo.toUpperCase())) producto={...cacheProductosRecepcion.get(codigo.toUpperCase())};
     if(!producto) {
       mostrarEstadoIngreso('Buscando producto...');
       const {respuesta,datos}=await consultarProducto(codigo);
@@ -1875,6 +1906,7 @@ async function agregarManual() {
 }
 
 async function agregarProductoIngreso(codigo) {
+  if(!recepcionActual || guardandoCaja || operacionCajaPendiente){mostrarEstadoIngreso("Primero iniciá el remito o resolvé el guardado pendiente.");return false;}
   if (confirmandoIngreso || operacionPendienteDatos) {
     mostrarEstadoIngreso(
       "Primero resolvé la confirmación pendiente."
@@ -2016,6 +2048,7 @@ async function agregarProductoIngreso(codigo) {
 // ACUMULAR PRODUCTOS POR SKU
 
 function acumularIngreso(clave, producto, cantidad) {
+  if(!recepcionActual || guardandoCaja || operacionCajaPendiente) {mostrarEstadoIngreso("Primero iniciá el remito o resolvé el guardado pendiente.");return false;}
   const anterior = listaMercaderia.get(clave);
 
   if (anterior) {
@@ -2037,6 +2070,9 @@ function acumularIngreso(clave, producto, cantidad) {
   }
 
   historialIngreso.push({ clave, cantidad });
+  cacheProductosRecepcion.set(String(producto.sku).toUpperCase(),{...producto});
+  validarCambioCaja();
+  guardarBorradorCaja();
   renderizarIngreso();
   return true;
 }
@@ -2082,6 +2118,7 @@ function deshacerIngreso() {
     return;
   }
 
+  if(guardandoCaja || operacionCajaPendiente) return;
   const ultimo = historialIngreso.pop();
 
   if (!ultimo) {
@@ -2099,11 +2136,14 @@ function deshacerIngreso() {
   }
 
   renderizarIngreso();
+  validarCambioCaja();
+  guardarBorradorCaja();
   mostrarEstadoIngreso("Última carga deshecha.");
   memoriasEscaner.ingreso.shift(); document.getElementById("memoriaIngreso").textContent=memoriasEscaner.ingreso.join(" | ");
 }
 
 function limpiarIngreso() {
+  if(guardandoCaja || operacionCajaPendiente) return;
   if (confirmandoIngreso || operacionPendienteDatos) {
     mostrarEstadoIngreso(
       "Primero resolvé la confirmación pendiente."
@@ -2117,11 +2157,179 @@ function limpiarIngreso() {
 
   listaMercaderia.clear();
   historialIngreso = [];
+  guardarBorradorCaja();
   cancelarSimpleIngreso();
   reiniciarMemoria("ingreso");
   ocultarSugerencias();
   renderizarIngreso();
   mostrarEstadoIngreso("Lista vaciada.");
+}
+
+
+// RECEPCIÓN POR CAJAS. No modifica STOCK ni la hoja INGRESOS antigua.
+const CLAVE_RECEPCION_LOCAL='pos-depo-recepcion-v1';
+function elegirControlBultos(modo){
+  controlBultos=modo==='INDEFINIDO'?'INDEFINIDO':'DEFINIDO';
+  document.getElementById('botonBultosDefinidos').classList.toggle('cantidad-activa',controlBultos==='DEFINIDO');
+  document.getElementById('botonBultosIndefinidos').classList.toggle('cantidad-activa',controlBultos==='INDEFINIDO');
+  document.getElementById('campoBultos').classList.toggle('oculto',controlBultos==='INDEFINIDO');
+}
+async function pedirCajas(accion,datos={}){
+  const respuesta=await fetch(API+'/remito-cajas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:credencialGoogle,accion,remitoId:recepcionActual.remitoId,...datos})});
+  const json=await respuesta.json();
+  if(!respuesta.ok||!json.ok)throw Error(json.error||'Error de recepción');
+  return json;
+}
+function guardarBorradorCaja(){
+  if(!recepcionActual)return;
+  try{localStorage.setItem(CLAVE_RECEPCION_LOCAL,JSON.stringify({recepcion:recepcionActual,numero:document.getElementById('numeroCajaIngreso').value,revision:revisionCajaActual,productos:[...listaMercaderia.values()],historial:historialIngreso,operacion:operacionCajaPendiente,cache:[...cacheProductosRecepcion]}));}catch(e){console.warn('No se pudo guardar el borrador local',e);}
+}
+function mostrarRecepcionActiva(){
+  document.getElementById('inicioRecepcion').classList.add('oculto');
+  document.getElementById('contenidoRecepcion').classList.remove('oculto');
+  document.getElementById('proveedorIngreso').value=recepcionActual.proveedor;
+  document.getElementById('remitoIngreso').value=recepcionActual.remito;
+  document.getElementById('cabeceraRecepcion').textContent='REMITO: '+recepcionActual.remito+' | PROVEEDOR: '+recepcionActual.proveedor;
+  validarCambioCaja();
+}
+function restaurarRecepcionLocal(){
+  if(recepcionActual){mostrarRecepcionActiva();actualizarResumenCajas();return;}
+  let guardado;
+  try{guardado=JSON.parse(localStorage.getItem(CLAVE_RECEPCION_LOCAL)||'null');}catch(e){}
+  if(!guardado?.recepcion)return;
+  recepcionActual=guardado.recepcion;
+  revisionCajaActual=Number(guardado.revision)||0;
+  numeroCajaBloqueado=(guardado.productos||[]).length||revisionCajaActual?guardado.numero||'':'';
+  operacionCajaPendiente=guardado.operacion||null;
+  listaMercaderia=new Map((guardado.productos||[]).map(p=>['SKU:'+String(p.sku).toUpperCase(),p]));
+  historialIngreso=guardado.historial||[];
+  cacheProductosRecepcion=new Map(guardado.cache||[]);
+  document.getElementById('numeroCajaIngreso').value=guardado.numero||'1';
+  mostrarRecepcionActiva();renderizarIngreso();actualizarResumenCajas();
+}
+async function iniciarRecepcion(){
+  if(!credencialGoogle){alert('Iniciá sesión primero.');return;}
+  const proveedor=document.getElementById('proveedorIngreso').value.trim();
+  const remito=document.getElementById('remitoIngreso').value.trim();
+  const declarados=controlBultos==='DEFINIDO'?Number(document.getElementById('bultosDeclarados').value):0;
+  if(!proveedor||!remito){alert('Ingresá proveedor y número de remito.');return;}
+  if(controlBultos==='DEFINIDO'&&(!Number.isSafeInteger(declarados)||declarados<1)){alert('Ingresá la cantidad de bultos.');return;}
+  if(!confirm('¿Iniciar recepción de '+proveedor+' / '+remito+'?'))return;
+  const boton=document.getElementById('botonIniciarRecepcion');boton.disabled=true;
+  recepcionActual={remitoId:crypto.randomUUID().replaceAll('-',''),proveedor,remito,control:controlBultos,declarados};
+  try{
+    const r=await pedirCajas('iniciar',{proveedor,remito,control:controlBultos,declarados});
+    if(r.recepcion)recepcionActual=r.recepcion;
+    document.getElementById('numeroCajaIngreso').value='1';
+    mostrarRecepcionActiva();guardarBorradorCaja();await actualizarResumenCajas();
+    mostrarEstadoIngreso('Recepción iniciada. Indicá el número real de caja.');
+  }catch(e){recepcionActual=null;alert('No se pudo iniciar: '+e.message);}finally{boton.disabled=false;}
+}
+function validarCambioCaja(){
+  const numero=document.getElementById('numeroCajaIngreso').value.trim();
+  const aviso=document.getElementById('estadoCajaIngreso');
+  if(!recepcionActual){aviso.textContent='';return;}
+  if(listaMercaderia.size||revisionCajaActual){
+    if(numeroCajaBloqueado && numero!==numeroCajaBloqueado){document.getElementById('numeroCajaIngreso').value=numeroCajaBloqueado;aviso.textContent='Guardá la caja antes de cambiar su número.';return;}
+    numeroCajaBloqueado=numero;
+    aviso.textContent='CAJA ACTUAL: '+numero+(revisionCajaActual?' (editando revisión '+revisionCajaActual+')':'')+' — No cambies el número con productos cargados; guardá primero.';
+  }else{
+    numeroCajaBloqueado='';
+    const existe=resumenRecepcion?.cajas?.find(c=>c.numero===numero);
+    aviso.textContent='CAJA ACTUAL: '+numero+(existe?' — YA GUARDADA: abrila desde la lista para corregir.':' — Nueva caja.');
+  }
+  guardarBorradorCaja();
+}
+async function actualizarResumenCajas(){
+  if(!recepcionActual)return;
+  try{
+    const r=await pedirCajas('listar');resumenRecepcion=r;
+    recepcionActual.control=r.recepcion.control;recepcionActual.declarados=r.recepcion.declarados;
+    const declarados=r.recepcion.control==='DEFINIDO'?' / '+r.recepcion.declarados+' declaradas':' (indefinido)';
+    document.getElementById('cabeceraRecepcion').textContent='REMITO '+r.recepcion.remito+' | '+r.recepcion.proveedor+'\nCAJAS: '+r.cajasContadas+declarados+' | UNIDADES: '+r.unidades+(r.pendientes.length?'\nPendientes: '+r.pendientes.slice(0,35).join(', ')+(r.pendientes.length>35?'…':''):'');
+    document.getElementById('cabeceraRecepcion').style.whiteSpace='pre-line';
+    validarCambioCaja();
+    return r;
+  }catch(e){mostrarEstadoIngreso('No se pudo actualizar el control de cajas: '+e.message);}
+}
+function mostrarCajasGuardadas(){
+  const div=document.getElementById('listaCajasGuardadas');div.replaceChildren();
+  if(!resumenRecepcion?.cajas?.length){div.textContent='Todavía no hay cajas guardadas.';return;}
+  for(const c of resumenRecepcion.cajas){
+    const boton=document.createElement('button');boton.className='secundario';
+    boton.textContent='CAJA '+c.numero+' — '+c.items+' artículos, '+c.unidades+' unidades — ABRIR / CORREGIR';
+    boton.onclick=()=>abrirCajaGuardada(c.numero);div.appendChild(boton);
+  }
+}
+async function abrirCajaGuardada(numero){
+  if(guardandoCaja || operacionCajaPendiente)return;
+  if(listaMercaderia.size&&!confirm('Hay productos sin guardar en la caja actual. ¿Descartarlos para abrir la caja '+numero+'?'))return;
+  cerrarCamaraIngreso();
+  try{
+    const r=await pedirCajas('ver-caja',{numero});
+    listaMercaderia=new Map(r.productos.map(p=>['SKU:'+p.sku.toUpperCase(),p]));
+    historialIngreso=[];revisionCajaActual=r.revision;operacionCajaPendiente=null;
+    numeroCajaBloqueado=numero;document.getElementById('numeroCajaIngreso').value=numero;
+    for(const p of r.productos)cacheProductosRecepcion.set(p.sku.toUpperCase(),p);
+    cancelarSimpleIngreso();renderizarIngreso();guardarBorradorCaja();validarCambioCaja();
+    mostrarEstadoIngreso('Caja '+numero+' abierta para corrección. Al guardar se creará una nueva revisión.');
+  }catch(e){alert('No se pudo abrir la caja: '+e.message);}
+}
+async function finalizarCaja(){
+  if(!recepcionActual||guardandoCaja||procesandoIngreso)return;
+  const numero=document.getElementById('numeroCajaIngreso').value.trim();
+  if(!numero){alert('Indicá el número de caja.');return;}
+  if(!listaMercaderia.size){alert('No hay productos cargados en esta caja.');return;}
+  if(operacionCajaPendiente&&operacionCajaPendiente.numero!==numero){alert('Hay un guardado pendiente de otra caja. Recuperá su número antes de reintentar.');return;}
+  const existente=resumenRecepcion?.cajas?.find(c=>c.numero===numero);
+  if(existente&&!revisionCajaActual){alert('La caja '+numero+' ya está guardada. Abrila desde VER CAJAS para corregirla.');return;}
+  if(!operacionCajaPendiente){
+    const productos=[...listaMercaderia.values()].map(p=>({sku:p.sku,codigoBarras:p.codigoBarras||p.sku,descripcion:p.descripcion,cantidad:p.cantidad}));
+    if(!confirm('¿Guardar CAJA '+numero+' con '+productos.length+' artículos y '+productos.reduce((s,p)=>s+p.cantidad,0)+' unidades?'))return;
+    operacionCajaPendiente={numero,operacionId:crypto.randomUUID().replaceAll('-',''),revisionEsperada:revisionCajaActual,productos};
+    guardarBorradorCaja();
+  }
+  guardandoCaja=true; // Mantener la cámara abierta en RÁPIDO entre cajas.
+  const boton=document.getElementById('botonGuardarCaja');boton.disabled=true;boton.textContent='GUARDANDO CAJA...';
+  try{
+    const r=await pedirCajas('guardar-caja',operacionCajaPendiente);
+    const guardada=operacionCajaPendiente.numero;
+    operacionCajaPendiente=null;revisionCajaActual=0;numeroCajaBloqueado='';listaMercaderia.clear();historialIngreso=[];
+    cancelarSimpleIngreso();reiniciarMemoria('ingreso');renderizarIngreso();
+    await actualizarResumenCajas();
+    let siguiente=1;const usados=new Set((resumenRecepcion?.cajas||[]).map(c=>c.numero));
+    while(usados.has(String(siguiente)))siguiente++;
+    document.getElementById('numeroCajaIngreso').value=String(siguiente);
+    guardarBorradorCaja();validarCambioCaja();
+    mostrarEstadoIngreso('CAJA '+guardada+' GUARDADA CORRECTAMENTE.'+(r.duplicado?' Ya estaba registrada; no se duplicó.':''));
+  }catch(e){mostrarEstadoIngreso('No se confirmó el guardado: '+e.message+'. No borres los productos; presioná FINALIZAR CAJA para reintentar.');}
+  finally{guardandoCaja=false;boton.disabled=false;boton.textContent='FINALIZAR CAJA Y GUARDAR';}
+}
+async function ajustarControlBultos(){
+  if(!recepcionActual||guardandoCaja)return;
+  const entrada=prompt('Escribí la cantidad total declarada, o INDEFINIDO para no establecer un total:',recepcionActual.control==='DEFINIDO'?String(recepcionActual.declarados):'INDEFINIDO');
+  if(entrada===null)return;
+  const control=entrada.trim().toUpperCase()==='INDEFINIDO'?'INDEFINIDO':'DEFINIDO';
+  const declarados=control==='DEFINIDO'?Number(entrada):0;
+  if(control==='DEFINIDO'&&(!Number.isSafeInteger(declarados)||declarados<1)){alert('Cantidad inválida.');return;}
+  try{await pedirCajas('ajustar-bultos',{control,declarados});await actualizarResumenCajas();guardarBorradorCaja();}catch(e){alert(e.message);}
+}
+async function finalizarRemitoCajas(){
+  if(!recepcionActual||guardandoCaja)return;
+  if(listaMercaderia.size||operacionCajaPendiente){alert('Primero guardá la caja actual.');return;}
+  const r=await actualizarResumenCajas();if(!r)return;
+  const faltan=r.recepcion.control==='DEFINIDO'?Math.max(0,r.recepcion.declarados-r.cajasContadas):0;
+  if(!confirm('¿FINALIZAR el remito '+r.recepcion.remito+'?\n'+r.cajasContadas+' cajas guardadas.'+(faltan?'\nATENCIÓN: faltan '+faltan+' cajas declaradas.':'')+'\n\nEsta acción cerrará la recepción.'))return;
+  try{
+    await pedirCajas('finalizar-remito');
+    recepcionActual=null;revisionCajaActual=0;resumenRecepcion=null;cacheProductosRecepcion.clear();
+    localStorage.removeItem(CLAVE_RECEPCION_LOCAL);
+    document.getElementById('contenidoRecepcion').classList.add('oculto');
+    document.getElementById('inicioRecepcion').classList.remove('oculto');
+    document.getElementById('remitoIngreso').value='';
+    document.getElementById('listaCajasGuardadas').replaceChildren();
+    mostrarEstadoIngreso('Remito finalizado. Podés comenzar otro.');
+  }catch(e){alert('No se pudo finalizar: '+e.message);}
 }
 
 // CONFIRMAR REMITO
@@ -2325,6 +2533,7 @@ async function abrirCamaraIngreso() {
     return;
   }
 
+  if(!recepcionActual || guardandoCaja || operacionCajaPendiente){mostrarEstadoIngreso("Primero iniciá el remito o resolvé el guardado pendiente.");return;}
   if (escaneandoIngreso) return;
 
   if (!credencialGoogle) {
@@ -2404,7 +2613,7 @@ async function detectarIngreso() {
 
       if (
         codigo !== codigoAnteriorIngreso &&
-        !procesandoIngreso
+        !procesandoIngreso && !guardandoCaja && !operacionCajaPendiente
       ) {
         codigoAnteriorIngreso = codigo;
         document.getElementById("productoIngreso").value = codigo;
