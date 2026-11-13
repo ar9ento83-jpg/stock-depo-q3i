@@ -275,21 +275,20 @@ input[readonly] { background: #e9edf0; }
       <button id="botonBultosIndefinidos" onclick="elegirControlBultos('INDEFINIDO')">INDEFINIDO</button>
     </div>
     <div id="campoBultos"><label for="bultosDeclarados">Bultos declarados por el transporte</label>
-      <input id="bultosDeclarados" type="number" inputmode="numeric" min="1" step="1" placeholder="Ej.: 72"></div>
+      <input id="bultosDeclarados" autocomplete="off" type="number" inputmode="numeric" min="1" step="1" placeholder="Ej.: 72"></div>
     <button id="botonIniciarRecepcion" onclick="iniciarRecepcion()">INICIAR REMITO</button>
     </div>
     <div id="contenidoRecepcion" class="oculto">
       <div class="recepcion-barra"><strong>📦 RECEPCIÓN EN CURSO</strong><button type="button" class="config-cajas-btn" onclick="alternarConfigRecepcion()" aria-label="Configuración del remito">⚙️</button></div>
       <div id="cabeceraRecepcion" class="externo-fila"></div>
       <label for="numeroCajaIngreso">N.º de caja (en cualquier orden, dentro del total declarado)</label>
-      <input id="numeroCajaIngreso" type="text" maxlength="100" inputmode="text" placeholder="Ej.: 18 o A-018" oninput="validarCambioCaja()">
+      <input id="numeroCajaIngreso" autocomplete="off" autocorrect="off" type="text" maxlength="100" inputmode="text" placeholder="Ej.: 18 o A-018" oninput="validarCambioCaja()">
       <div id="estadoCajaIngreso" class="nota"></div>
       <div id="configRecepcion" class="oculto config-recepcion">
         <h4>⚙️ Gestión del remito</h4>
         <button class="secundario" onclick="mostrarCajasGuardadas()">VER CAJAS GUARDADAS / BORRAR</button>
         <div id="listaCajasGuardadas"></div>
         <button class="secundario" onclick="ajustarControlBultos()">MODIFICAR BULTOS DECLARADOS</button>
-        <button class="secundario" onclick="finalizarRemitoCajas()">FINALIZAR REMITO COMPLETO</button>
       </div>
     <h4>Modalidad de carga</h4>
     <div class="cantidades" style="grid-template-columns:repeat(2,1fr)">
@@ -363,6 +362,7 @@ input[readonly] { background: #e9edf0; }
     <button class="secundario boton-deshacer" onclick="deshacerIngreso()" title="Deshacer último movimiento" aria-label="Deshacer último movimiento">↶ <span>DESHACER ÚLTIMO MOVIMIENTO</span></button>
     <div class="acciones-finales-caja">
       <button id="botonGuardarCaja" onclick="finalizarCaja()">✓ FINALIZAR CAJA Y GUARDAR</button>
+      <button id="botonFinalizarRemito" class="secundario" onclick="finalizarRemitoCajas()">✓ FINALIZAR REMITO COMPLETO</button>
       <button class="boton-cancelar-remito" onclick="cancelarRemitoCajas()">CANCELAR REMITO</button>
     </div>
     </div>
@@ -2262,8 +2262,22 @@ async function actualizarResumenCajas(){
     document.getElementById('cabeceraRecepcion').textContent='REMITO '+r.recepcion.remito+' | '+r.recepcion.proveedor+'\nCAJAS: '+r.cajasContadas+declarados+' | UNIDADES: '+r.unidades+(r.pendientes.length?'\nPendientes: '+r.pendientes.slice(0,35).join(', ')+(r.pendientes.length>35?'…':''):'');
     document.getElementById('cabeceraRecepcion').style.whiteSpace='pre-line';
     validarCambioCaja();
+    actualizarBotonCajaCompleta();
     return r;
   }catch(e){mostrarEstadoIngreso('No se pudo actualizar el control de cajas: '+e.message);}
+}
+function actualizarBotonCajaCompleta(){
+  const boton=document.getElementById('botonGuardarCaja');
+  if(!boton)return;
+  const completa=!!(recepcionActual && resumenRecepcion && recepcionActual.control==='DEFINIDO' && resumenRecepcion.cajasContadas>=Number(recepcionActual.declarados));
+  // Una solicitud pendiente debe poder reintentarse con el mismo ID, incluso si la caja ya se guardó.
+  const bloqueada=completa && !operacionCajaPendiente;
+  boton.disabled=guardandoCaja || bloqueada;
+  boton.textContent=guardandoCaja?'GUARDANDO CAJA...':bloqueada?'✓ TODAS LAS CAJAS GUARDADAS':'✓ FINALIZAR CAJA Y GUARDAR';
+  const numero=document.getElementById('numeroCajaIngreso');
+  if(numero)numero.disabled=bloqueada;
+  const fin=document.getElementById('botonFinalizarRemito');
+  if(fin)fin.textContent=completa?'✓ FINALIZAR REMITO — CAJAS COMPLETAS':'✓ FINALIZAR REMITO COMPLETO';
 }
 function alternarConfigRecepcion(){
   document.getElementById("configRecepcion").classList.toggle("oculto");
@@ -2297,6 +2311,7 @@ async function finalizarCaja(){
   if(!numero){alert('Indicá el número de caja.');return;}
   if(!cajaEnRango(numero)){alert('Caja fuera de rango. El remito declara '+recepcionActual.declarados+' cajas: solo se permiten números del 1 al '+recepcionActual.declarados+'.');return;}
   if(!listaMercaderia.size){alert('No hay productos cargados en esta caja.');return;}
+  if(recepcionActual.control==='DEFINIDO' && resumenRecepcion?.cajasContadas>=Number(recepcionActual.declarados) && !operacionCajaPendiente){alert('Ya se guardaron todas las cajas declaradas. Finalizá el remito o borrá una caja desde el engranaje para volver a contarla.');return;}
   if(operacionCajaPendiente&&operacionCajaPendiente.numero!==numero){alert('Hay un guardado pendiente de otra caja. Recuperá su número antes de reintentar.');return;}
   const existente=resumenRecepcion?.cajas?.find(c=>c.numero===numero);
   if(existente&&!revisionCajaActual){alert('La caja '+numero+' ya está guardada. Borrala desde VER CAJAS para volver a contabilizarla.');return;}
@@ -2316,11 +2331,12 @@ async function finalizarCaja(){
     await actualizarResumenCajas();
     let siguiente=1;const usados=new Set((resumenRecepcion?.cajas||[]).map(c=>c.numero));
     while(usados.has(String(siguiente)))siguiente++;
-    document.getElementById('numeroCajaIngreso').value=String(siguiente);
+    const completa=recepcionActual.control==='DEFINIDO' && resumenRecepcion?.cajasContadas>=Number(recepcionActual.declarados);
+    document.getElementById('numeroCajaIngreso').value=completa?'':String(siguiente);
     guardarBorradorCaja();validarCambioCaja();
-    mostrarEstadoIngreso('CAJA '+guardada+' GUARDADA CORRECTAMENTE.'+(r.duplicado?' Ya estaba registrada; no se duplicó.':''));
+    mostrarEstadoIngreso('CAJA '+guardada+' GUARDADA CORRECTAMENTE.'+(r.duplicado?' Ya estaba registrada; no se duplicó.':'')+(completa?' TODAS LAS CAJAS ESTÁN CONTABILIZADAS. Presioná FINALIZAR REMITO COMPLETO.':''));
   }catch(e){mostrarEstadoIngreso('No se confirmó el guardado: '+e.message+'. No borres los productos; presioná FINALIZAR CAJA para reintentar.');}
-  finally{guardandoCaja=false;boton.disabled=false;boton.textContent='FINALIZAR CAJA Y GUARDAR';}
+  finally{guardandoCaja=false;actualizarBotonCajaCompleta();}
 }
 async function ajustarControlBultos(){
   if(!recepcionActual||guardandoCaja)return;
