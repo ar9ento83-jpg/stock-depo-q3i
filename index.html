@@ -1911,6 +1911,22 @@ async function agregarProductoIngreso(codigo) {
   mostrarEstadoIngreso("Buscando producto...");
 
   try {
+    // Antes de consultar Cloud Run, reutilizar los artículos ya identificados
+    // en este remito (incluidos los nuevos que todavía no están en PARAMETROS).
+    const codigoNormalizado = String(codigo).trim().toUpperCase();
+    const existenteIngreso = [...listaMercaderia.values()].find(p =>
+      String(p.sku || '').trim().toUpperCase() === codigoNormalizado ||
+      String(p.codigoBarras || '').trim().toUpperCase() === codigoNormalizado
+    );
+    if (existenteIngreso) {
+      const agregado = acumularIngreso('SKU:' + existenteIngreso.sku.toUpperCase(),
+        existenteIngreso, cantidad);
+      if (!agregado) return false;
+      mostrarEstadoIngreso(existenteIngreso.sku + ': +' + cantidad);
+      memoriaLectura('ingreso', existenteIngreso.sku, '+' + cantidad);
+      return true;
+    }
+
     const { respuesta, datos } =
       await consultarProducto(codigo);
 
@@ -2539,5 +2555,4 @@ window.addEventListener("load", () => {
 </script>
 </body>
 </html>
-
 
