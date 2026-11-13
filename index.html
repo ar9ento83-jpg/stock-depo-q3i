@@ -189,6 +189,12 @@ input[readonly] { background: #e9edf0; }
 .acciones-finales-caja {border-top:2px solid #e1e7eb;margin-top:20px;padding-top:15px}
 .acciones-finales-caja #botonGuardarCaja {background:#176b40;font-weight:bold;min-height:64px}
 .boton-cancelar-remito {background:#a12d32;font-size:15px;margin-top:12px}
+.boton-finalizar-remito {background:#176b40;font-weight:bold;min-height:64px;border:2px solid #11552f}
+.aviso-cajas-completas {background:#e3f5e9;color:#11552f;font-weight:bold;text-align:center;border-radius:10px;padding:15px;margin:8px 0}
+.panel-consulta-recepcion {background:#f2f6f8;border:1px solid #d7e0e5;border-radius:12px;padding:12px;margin:12px 0;max-height:65vh;overflow:auto}
+.fila-total-recepcion {padding:9px 4px;border-bottom:1px solid #d6dee2;font-size:14px;overflow-wrap:anywhere}
+.fila-total-recepcion strong {color:#175b37}
+
 </style>
 </head>
 
@@ -277,6 +283,7 @@ input[readonly] { background: #e9edf0; }
     <div id="campoBultos"><label for="bultosDeclarados">Bultos declarados por el transporte</label>
       <input id="bultosDeclarados" autocomplete="off" type="number" inputmode="numeric" min="1" step="1" placeholder="Ej.: 72"></div>
     <button id="botonIniciarRecepcion" onclick="iniciarRecepcion()">INICIAR REMITO</button>
+    <button class="secundario" onclick="abrirHistorialRemitos()">📚 HISTORIAL DE REMITOS</button>
     </div>
     <div id="contenidoRecepcion" class="oculto">
       <div class="recepcion-barra"><strong>📦 RECEPCIÓN EN CURSO</strong><button type="button" class="config-cajas-btn" onclick="alternarConfigRecepcion()" aria-label="Configuración del remito">⚙️</button></div>
@@ -286,6 +293,7 @@ input[readonly] { background: #e9edf0; }
       <div id="estadoCajaIngreso" class="nota"></div>
       <div id="configRecepcion" class="oculto config-recepcion">
         <h4>⚙️ Gestión del remito</h4>
+        <button class="secundario" onclick="abrirHistorialRemitos()">📚 HISTORIAL DE REMITOS</button>
         <button class="secundario" onclick="mostrarCajasGuardadas()">VER CAJAS GUARDADAS / BORRAR</button>
         <div id="listaCajasGuardadas"></div>
         <button class="secundario" onclick="ajustarControlBultos()">MODIFICAR BULTOS DECLARADOS</button>
@@ -356,16 +364,28 @@ input[readonly] { background: #e9edf0; }
     <div id="memoriaIngreso" class="memoria-lecturas" aria-live="polite"></div>
     <p id="estadoIngreso"></p>
 
+    <button class="secundario" onclick="verTotalRecepcion()">📋 VER TOTAL DE MERCADERÍA DEL REMITO</button>
+    <div id="panelTotalRecepcion" class="oculto panel-consulta-recepcion"></div>
     <h3 id="contadorIngreso">0 ítems diferentes</h3>
     <div id="listaIngreso"></div>
 
     <button class="secundario boton-deshacer" onclick="deshacerIngreso()" title="Deshacer último movimiento" aria-label="Deshacer último movimiento">↶ <span>DESHACER ÚLTIMO MOVIMIENTO</span></button>
     <div class="acciones-finales-caja">
+      <div id="avisoCajasCompletas" class="aviso-cajas-completas oculto">✓ TODAS LAS CAJAS GUARDADAS</div>
       <button id="botonGuardarCaja" onclick="finalizarCaja()">✓ FINALIZAR CAJA Y GUARDAR</button>
-      <button id="botonFinalizarRemito" class="secundario" onclick="finalizarRemitoCajas()">✓ FINALIZAR REMITO COMPLETO</button>
+      <button id="botonFinalizarRemito" class="boton-finalizar-remito" onclick="finalizarRemitoCajas()">✓ FINALIZAR REMITO COMPLETO</button>
       <button class="boton-cancelar-remito" onclick="cancelarRemitoCajas()">CANCELAR REMITO</button>
     </div>
     </div>
+  </div>
+</section>
+
+<section id="pantallaHistorialRemitos" class="oculto">
+  <button class="secundario" onclick="volverHistorialIngreso()">← VOLVER A INGRESO</button>
+  <div class="panel"><h3>📚 Historial de remitos</h3>
+    <button onclick="cargarHistorialRemitos()">ACTUALIZAR HISTORIAL</button>
+    <div id="listaHistorialRemitos"></div>
+    <div id="detalleHistorialRemito" class="panel-consulta-recepcion oculto"></div>
   </div>
 </section>
 
@@ -2257,6 +2277,7 @@ async function actualizarResumenCajas(){
   if(!recepcionActual)return;
   try{
     const r=await pedirCajas('listar');resumenRecepcion=r;
+    document.getElementById('panelTotalRecepcion')?.classList.add('oculto');
     recepcionActual.control=r.recepcion.control;recepcionActual.declarados=r.recepcion.declarados;
     const declarados=r.recepcion.control==='DEFINIDO'?' / '+r.recepcion.declarados+' declaradas':' (indefinido)';
     document.getElementById('cabeceraRecepcion').textContent='REMITO '+r.recepcion.remito+' | '+r.recepcion.proveedor+'\nCAJAS: '+r.cajasContadas+declarados+' | UNIDADES: '+r.unidades+(r.pendientes.length?'\nPendientes: '+r.pendientes.slice(0,35).join(', ')+(r.pendientes.length>35?'…':''):'');
@@ -2273,11 +2294,73 @@ function actualizarBotonCajaCompleta(){
   // Una solicitud pendiente debe poder reintentarse con el mismo ID, incluso si la caja ya se guardó.
   const bloqueada=completa && !operacionCajaPendiente;
   boton.disabled=guardandoCaja || bloqueada;
-  boton.textContent=guardandoCaja?'GUARDANDO CAJA...':bloqueada?'✓ TODAS LAS CAJAS GUARDADAS':'✓ FINALIZAR CAJA Y GUARDAR';
+  boton.classList.toggle('oculto',bloqueada);
+  boton.textContent=guardandoCaja?'GUARDANDO CAJA...':'✓ FINALIZAR CAJA Y GUARDAR';
+  const aviso=document.getElementById('avisoCajasCompletas');
+  if(aviso)aviso.classList.toggle('oculto',!bloqueada);
   const numero=document.getElementById('numeroCajaIngreso');
   if(numero)numero.disabled=bloqueada;
   const fin=document.getElementById('botonFinalizarRemito');
   if(fin)fin.textContent=completa?'✓ FINALIZAR REMITO — CAJAS COMPLETAS':'✓ FINALIZAR REMITO COMPLETO';
+}
+async function consultarHistorialRecepciones(accion,remitoId=''){
+  const respuesta=await fetch(API+'/historial-remitos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:credencialGoogle,accion,remitoId})});
+  const json=await respuesta.json();
+  if(!respuesta.ok||!json.ok)throw Error(json.error||'No se pudo consultar el historial');
+  return json;
+}
+function lineaRecepcion(contenedor,textoPrincipal,detalle=''){
+  const div=document.createElement('div');div.className='fila-total-recepcion';
+  const fuerte=document.createElement('strong');fuerte.textContent=textoPrincipal;div.appendChild(fuerte);
+  if(detalle){const p=document.createElement('div');p.textContent=detalle;div.appendChild(p)}
+  contenedor.appendChild(div);
+}
+async function verTotalRecepcion(){
+  if(!recepcionActual)return;
+  const panel=document.getElementById('panelTotalRecepcion');
+  if(!panel.classList.contains('oculto')){panel.classList.add('oculto');return;}
+  panel.classList.remove('oculto');panel.textContent='Consultando productos guardados...';
+  try{
+    const r=await consultarHistorialRecepciones('detalle',recepcionActual.remitoId);
+    panel.replaceChildren();
+    lineaRecepcion(panel,'TOTAL GUARDADO: '+r.articulosDiferentes+' SKU · '+r.recepcion.unidades+' unidades · '+r.recepcion.cajas+' cajas');
+    if(listaMercaderia.size)lineaRecepcion(panel,'CAJA ACTUAL SIN GUARDAR', [...listaMercaderia.values()].map(p=>p.sku+': '+p.cantidad).join(' · '));
+    if(!r.productos.length)lineaRecepcion(panel,'Todavía no hay productos guardados.');
+    for(const p of r.productos)lineaRecepcion(panel,p.sku+' — '+p.cantidad+' unidades',p.descripcion+' | Cajas: '+[...new Set(p.cajas)].join(', '));
+  }catch(e){panel.textContent='Error al consultar el total: '+e.message}
+}
+function abrirHistorialRemitos(){
+  document.getElementById('pantallaIngreso').classList.add('oculto');
+  document.getElementById('pantallaHistorialRemitos').classList.remove('oculto');
+  cargarHistorialRemitos();
+}
+function volverHistorialIngreso(){
+  document.getElementById('pantallaHistorialRemitos').classList.add('oculto');
+  document.getElementById('pantallaIngreso').classList.remove('oculto');
+}
+async function cargarHistorialRemitos(){
+  const lista=document.getElementById('listaHistorialRemitos');lista.textContent='Cargando historial...';
+  document.getElementById('detalleHistorialRemito').classList.add('oculto');
+  try{
+    const r=await consultarHistorialRecepciones('listar');lista.replaceChildren();
+    if(!r.remitos.length){lista.textContent='No hay remitos registrados.';return;}
+    for(const remito of r.remitos){
+      const boton=document.createElement('button');boton.className='secundario';
+      boton.textContent=remito.remito+' · '+remito.proveedor+' · '+remito.estado+' · '+remito.cajas+' cajas';
+      boton.onclick=()=>verDetalleHistorial(remito.remitoId);lista.appendChild(boton);
+    }
+  }catch(e){lista.textContent='Error al cargar el historial: '+e.message}
+}
+async function verDetalleHistorial(remitoId){
+  const panel=document.getElementById('detalleHistorialRemito');panel.classList.remove('oculto');panel.textContent='Consultando remito...';
+  try{
+    const r=await consultarHistorialRecepciones('detalle',remitoId);panel.replaceChildren();
+    lineaRecepcion(panel,r.recepcion.remito+' · '+r.recepcion.proveedor,r.recepcion.fecha+' | '+r.recepcion.estado);
+    lineaRecepcion(panel,'TOTAL: '+r.articulosDiferentes+' SKU · '+r.recepcion.unidades+' unidades · '+r.recepcion.cajas+' cajas',r.recepcion.control==='DEFINIDO'?'Bultos declarados: '+r.recepcion.declarados:'Bultos indefinidos');
+    for(const c of r.cajas)lineaRecepcion(panel,'Caja '+c.numero,c.articulos+' artículos · '+c.unidades+' unidades');
+    lineaRecepcion(panel,'PRODUCTOS CONTABILIZADOS');
+    for(const p of r.productos)lineaRecepcion(panel,p.sku+' — '+p.cantidad+' unidades',p.descripcion+' | Cajas: '+[...new Set(p.cajas)].join(', '));
+  }catch(e){panel.textContent='Error al consultar remito: '+e.message}
 }
 function alternarConfigRecepcion(){
   document.getElementById("configRecepcion").classList.toggle("oculto");
