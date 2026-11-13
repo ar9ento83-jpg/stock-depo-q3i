@@ -65,6 +65,10 @@ input[readonly] { background: #e9edf0; }
 .menu .pendiente { background: #607d8b; }
 .cajones-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; }
 .cajones-grid button { margin:0; padding:12px 5px; font-size:15px; }
+.cajones-grid button.cajon-vacio {background:#dce0e4;color:#46525c;border:1px solid #b7c0c8;}
+.cajones-grid button.cajon-vacio small {color:#5c6770;}
+#panelExternoSimple {background:#eff7f1;padding:12px;border-radius:10px;margin:10px 0;}
+#panelExternoSimple input {margin:5px 0;}
 .externo-fila { padding:12px; background:#f2f4f7; border-radius:10px; margin:8px 0; }
 .externo-fila button { text-align:left; margin:0; }
 .externo-fila small { display:block; margin-top:5px; }
@@ -455,6 +459,12 @@ input[readonly] { background: #e9edf0; }
   <div id="panelCargaExterna" class="panel oculto">
     <h3 id="tituloOperacionExterna">Agregar mercadería al cajón</h3>
     <p id="destinoCargaExterna"></p>
+    <h4>Modo de carga</h4>
+    <div class="cantidades" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+      <button id="modoExternoRapido" class="cantidad-activa" onclick="cambiarModoExternoCarga('RAPIDO')">⚡ RÁPIDO</button>
+      <button id="modoExternoSimple" onclick="cambiarModoExternoCarga('SIMPLE')">✏️ SIMPLE</button>
+    </div>
+    <div id="panelExternoRapido">
     <h4>Cantidad por lectura</h4>
     <div id="cantidadesExternoCarga" class="cantidades">
       <button class="cantidad-activa" onclick="seleccionarCantidadExterna(1,this)">1</button>
@@ -467,6 +477,13 @@ input[readonly] { background: #e9edf0; }
     </div>
     <input id="cantidadExternaPersonalizada" class="oculto" type="number" min="1" step="1" placeholder="Cantidad personalizada">
     <p id="cantidadExternaTexto">Cada lectura suma: 1</p>
+    </div>
+    <div id="panelExternoSimple" class="oculto">
+      <strong id="productoExternoSimpleNombre">Escaneá o buscá un artículo</strong>
+      <input id="cantidadExternoSimple" type="number" inputmode="numeric" min="1" step="1" autocomplete="off" placeholder="Cantidad física">
+      <button onclick="confirmarProductoExternoSimple()">AGREGAR CANTIDAD</button>
+      <button class="secundario" onclick="cancelarProductoExternoSimple()">CAMBIAR PRODUCTO</button>
+    </div>
     <p id="ayudaOperacionExterna" class="nota"></p>
     <div class="contenedor-busqueda">
       <input id="productoExternoCarga" placeholder="SKU, código de barras o descripción" autocomplete="off" oninput="programarBusquedaExternaCarga()" onkeydown="if(event.key==='Enter'){event.preventDefault();agregarManualExterno();}">
@@ -474,13 +491,13 @@ input[readonly] { background: #e9edf0; }
     </div>
     <button id="botonManualExterno" onclick="agregarManualExterno()">AGREGAR MANUALMENTE</button>
     <button onclick="abrirCamaraExterna()">ESCANEAR CÓDIGO</button>
-    <button class="secundario" onclick="cerrarCamaraExterna()">CERRAR CÁMARA</button>
+    <button id="botonCerrarCamaraExterna" class="secundario oculto" onclick="cerrarCamaraExterna()">CERRAR CÁMARA</button>
     <video id="videoExterno" autoplay playsinline></video>
     <div id="memoriaExterno" class="memoria-lecturas" aria-live="polite"></div>
     <p id="estadoExternoCarga" class="nota"></p>
     <h3 id="contadorExternoCarga">0 productos diferentes</h3>
     <div id="listaExternoCarga"></div>
-    <button class="secundario" onclick="deshacerExternoCarga()">DESHACER ÚLTIMO</button>
+    <button class="secundario" onclick="deshacerExternoCarga()">↶ DESHACER ÚLTIMO</button>
     <button class="secundario" onclick="limpiarExternoCarga()">LIMPIAR LISTA</button>
     <button id="confirmarExternoCarga" onclick="confirmarAgregarExterno()">CONFIRMAR AGREGADO</button>
     <button class="secundario" onclick="cerrarAgregarExterno()">CERRAR CARGA</button>
@@ -872,6 +889,7 @@ async function abrirDepositoExterno(id) {
       const boton = document.createElement("button");
       boton.textContent = `${String(cajon.numero).padStart(2,"0")} · ${cajon.skuDiferentes} PRODUCTOS`;
       boton.title = `${cajon.unidades} unidades`;
+      if (!(Number(cajon.unidades)>0)) { boton.classList.add("cajon-vacio"); boton.textContent += " · VACÍO"; }
       boton.addEventListener("click", () => abrirDetalleCajon(cajon));
       lista.appendChild(boton);
     }
@@ -1146,6 +1164,8 @@ async function buscarProductoExterno() {
 // AGREGAR STOCK EXTERNO: CARGA Y CONFIRMACIÓN
 let modoExterno = 'AGREGAR';
 let cantidadExterna = 1;
+let modoCargaExterna = "RAPIDO";
+let productoExternoSimple = null;
 let listaExterna = new Map();
 let historialExterno = [];
 let pendienteExternoId = null;
@@ -1237,6 +1257,7 @@ function abrirOperacionExterna(modo) {
       !confirm('¿Descartar la lista actual para cambiar de operación?')) return;
   cerrarCamaraExterna(); reiniciarCargaExterna();
   modoExterno = modo;
+  cambiarModoExternoCarga("RAPIDO");
   const d = depositosExternos.find(x => x.id === depositoExternoActual);
   document.getElementById('destinoCargaExterna').textContent =
     (d?.nombre || depositoExternoActual) + ' · ' +
@@ -1267,9 +1288,51 @@ function cerrarAgregarExterno() {
     estadoCargaExterna('Primero resolvé la confirmación pendiente.'); return;
   }
   if (listaExterna.size && !confirm('¿Cerrar y descartar la lista sin guardar?')) return;
-  cerrarCamaraExterna(); reiniciarCargaExterna();
+  cerrarCamaraExterna(); reiniciarCargaExterna(); cancelarProductoExternoSimple();
   document.getElementById('panelCargaExterna').classList.add('oculto');
 }
+function cambiarModoExternoCarga(modo) {
+  if (guardandoExterno || pendienteExternoDatos || procesandoExterno) return;
+  modoCargaExterna = modo === 'SIMPLE' ? 'SIMPLE' : 'RAPIDO';
+  document.getElementById('modoExternoRapido').classList.toggle('cantidad-activa',modoCargaExterna==='RAPIDO');
+  document.getElementById('modoExternoSimple').classList.toggle('cantidad-activa',modoCargaExterna==='SIMPLE');
+  document.getElementById('panelExternoRapido').classList.toggle('oculto',modoCargaExterna!=='RAPIDO');
+  document.getElementById('panelExternoSimple').classList.toggle('oculto',modoCargaExterna!=='SIMPLE');
+  cancelarProductoExternoSimple();
+  if (modoCargaExterna==='SIMPLE') cerrarCamaraExterna();
+}
+function cancelarProductoExternoSimple() {
+  productoExternoSimple = null;
+  document.getElementById('productoExternoSimpleNombre').textContent='Escaneá o buscá un artículo';
+  document.getElementById('cantidadExternoSimple').value='';
+}
+function prepararProductoExternoSimple(producto) {
+  if (modoCargaExterna!=='SIMPLE' || pendienteExternoDatos || guardandoExterno) return;
+  cerrarCamaraExterna();
+  productoExternoSimple = producto;
+  document.getElementById('productoExternoSimpleNombre').textContent=producto.sku+' · '+(producto.descripcion||producto.sku);
+  const campo=document.getElementById('cantidadExternoSimple');
+  campo.value='';
+  campo.scrollIntoView({behavior:'smooth',block:'center'});
+  setTimeout(()=>{if(productoExternoSimple===producto)campo.focus({preventScroll:true});},180);
+}
+function confirmarProductoExternoSimple() {
+  if (!productoExternoSimple || guardandoExterno || pendienteExternoDatos) return;
+  const campo=document.getElementById('cantidadExternoSimple');
+  const cantidad=Number(campo.value);
+  if (!campo.value.trim() || !Number.isSafeInteger(cantidad) || cantidad<=0) {
+    estadoCargaExterna('Ingresá una cantidad entera mayor que cero.'); campo.focus(); return;
+  }
+  const producto=productoExternoSimple;
+  if (acumularExterno(producto,cantidad)) {
+    cancelarProductoExternoSimple();
+    document.getElementById('productoExternoCarga').value='';
+    document.getElementById('productoExternoCarga').scrollIntoView({behavior:'smooth',block:'center'});
+  }
+}
+document.getElementById('cantidadExternoSimple').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){e.preventDefault();confirmarProductoExternoSimple();}
+});
 function seleccionarCantidadExterna(valor, boton) {
   if (pendienteExternoDatos || guardandoExterno) return;
   document.querySelectorAll('#cantidadesExternoCarga button').forEach(b => b.classList.remove('cantidad-activa'));
@@ -1309,7 +1372,7 @@ function programarBusquedaExternaCarga() {
       for (const p of datos.productos || []) {
         const b = document.createElement('button'); b.className='sugerencia';
         b.textContent=p.sku+' · '+p.descripcion;
-        b.onclick=()=>{ ocultarSugerenciasExternoCarga(); document.getElementById('productoExternoCarga').value=''; acumularExterno(p); };
+        b.onclick=()=>{ ocultarSugerenciasExternoCarga(); document.getElementById('productoExternoCarga').value=''; if(modoCargaExterna==='SIMPLE') prepararProductoExternoSimple(p); else acumularExterno(p); };
         cont.appendChild(b);
       }
       if (!cont.childElementCount) cont.textContent='No se encontraron productos en PARAMETROS.';
@@ -1317,9 +1380,9 @@ function programarBusquedaExternaCarga() {
     } catch(e) { if (n === secuenciaExternoCarga) estadoCargaExterna(e.message); }
   }, 300);
 }
-function acumularExterno(p) {
+function acumularExterno(p,cantidadFija=null) {
   if (pendienteExternoDatos || guardandoExterno) return false;
-  const cantidad = obtenerCantidadExterna();
+  const cantidad = cantidadFija === null ? obtenerCantidadExterna() : cantidadFija;
   if (cantidad === null) { estadoCargaExterna('Cantidad inválida.'); errorLectura('externo','productoExternoCarga','Cantidad inválida'); return false; }
   const clave = p.sku.trim().toUpperCase();
   const anterior = listaExterna.get(clave);
@@ -1345,7 +1408,8 @@ async function agregarManualExterno() {
       errorLectura('externo','productoExternoCarga',datos.error || 'Producto no encontrado'); return;
     }
     const p=datos.producto;
-    if (acumularExterno(p)) campo.value='';
+    if (modoCargaExterna==='SIMPLE') { prepararProductoExternoSimple(p); campo.value=''; }
+    else if (acumularExterno(p)) campo.value='';
   } catch(e) { estadoCargaExterna('Error al consultar: '+e.message); errorLectura('externo','productoExternoCarga',e.message); }
   finally { procesandoExterno=false; }
 }
@@ -1362,6 +1426,8 @@ function renderizarCargaExterna() {
 }
 function deshacerExternoCarga() {
   if (pendienteExternoDatos || guardandoExterno) return;
+  if (!historialExterno.length) { estadoCargaExterna('No hay lecturas para deshacer.'); return; }
+  if (!confirm('¿Deshacer el último movimiento de esta carga?')) return;
   const u=historialExterno.pop();
   if (!u) { estadoCargaExterna('No hay lecturas para deshacer.'); return; }
   const p=listaExterna.get(u.clave);
@@ -1426,6 +1492,8 @@ async function abrirCamaraExterna() {
     const video=document.getElementById('videoExterno'); video.srcObject=streamExterno;
     video.style.display='block'; await video.play();
     escaneandoExterno=true; ultimoCodigoExterno=null; ausenciasExterno=0;
+    document.getElementById('botonCerrarCamaraExterna').classList.remove('oculto');
+    video.scrollIntoView({behavior:'smooth',block:'center'});
     detectarExterno(); estadoCargaExterna('Escáner activo.');
   } catch(e) { cerrarCamaraExterna(); estadoCargaExterna('No se pudo abrir la cámara: '+e.message); }
 }
@@ -1440,6 +1508,7 @@ async function detectarExterno() {
         ultimoCodigoExterno=codigo;
         document.getElementById('productoExternoCarga').value=codigo;
         await agregarManualExterno();
+        if (modoCargaExterna==='SIMPLE' && productoExternoSimple) cerrarCamaraExterna();
       }
     }
   } catch(e) { console.error(e); }
@@ -1450,6 +1519,7 @@ function cerrarCamaraExterna() {
   if (streamExterno) { streamExterno.getTracks().forEach(t=>t.stop()); streamExterno=null; }
   const video=document.getElementById('videoExterno');
   video.style.display='none'; video.srcObject=null;
+  document.getElementById('botonCerrarCamaraExterna').classList.add('oculto');
 }
 
 // FECHA AUTOMÁTICA
