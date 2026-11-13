@@ -258,6 +258,12 @@ input[readonly] { background: #e9edf0; }
     <input id="fechaIngreso" type="text"
       readonly tabindex="-1">
 
+    <h4>Modalidad de carga</h4>
+    <div class="cantidades" style="grid-template-columns:repeat(2,1fr)">
+      <button id="modoIngresoRapido" class="cantidad-activa" onclick="cambiarModoIngreso('RAPIDO')">⚡ RÁPIDO</button>
+      <button id="modoIngresoSimple" onclick="cambiarModoIngreso('SIMPLE')">✏️ SIMPLE</button>
+    </div>
+    <div id="panelIngresoRapido">
     <h4>Cantidad por escaneo</h4>
     <div id="cantidadesIngreso" class="cantidades">
       <button class="cantidad-activa"
@@ -279,6 +285,17 @@ input[readonly] { background: #e9edf0; }
 
     <p id="cantidadActual">Cada lectura suma: 1</p>
 
+    </div>
+    <div id="panelIngresoSimple" class="oculto">
+      <p class="nota">Identificá un producto con la cámara o escribiendo su código. Después ingresá la cantidad.</p>
+      <div id="simpleIngresoResuelto" class="oculto">
+        <p id="simpleIngresoDescripcion"></p>
+        <label for="simpleIngresoCantidad">Cantidad contada</label>
+        <input id="simpleIngresoCantidad" type="number" inputmode="numeric" min="1" step="1" placeholder="Cantidad de unidades" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmarSimpleIngreso();}">
+        <button onclick="confirmarSimpleIngreso()">AGREGAR CANTIDAD</button>
+        <button class="secundario" onclick="cancelarSimpleIngreso()">CAMBIAR PRODUCTO</button>
+      </div>
+    </div>
     <h4>Agregar producto</h4>
     <p class="nota">
       Escribí parte del SKU o descripción para ver sugerencias.
@@ -468,6 +485,8 @@ let detector = null;
 let escaneando = false;
 
 let cantidadIngreso = 1;
+let modoIngreso = 'RAPIDO';
+let productoSimpleIngreso = null;
 let listaMercaderia = new Map();
 let historialIngreso = [];
 
@@ -1401,6 +1420,12 @@ async function buscar() {
   resultado.textContent = "Buscando producto...";
 
   try {
+    const existenteIngreso=[...listaMercaderia.values()].find(p=>p.sku.toUpperCase()===codigo.toUpperCase() || String(p.codigoBarras||'').toUpperCase()===codigo.toUpperCase());
+    if(existenteIngreso) {
+      const agregado=acumularIngreso('SKU:'+existenteIngreso.sku.toUpperCase(),existenteIngreso,cantidad);
+      if(agregado){memoriaLectura('ingreso',existenteIngreso.sku,'+'+cantidad);mostrarEstadoIngreso(existenteIngreso.sku+': +'+cantidad);}
+      return agregado;
+    }
     const { respuesta, datos } =
       await consultarProducto(codigo);
 
@@ -1673,6 +1698,7 @@ function seleccionarSugerencia(producto) {
     return;
   }
 
+  if(modoIngreso==='SIMPLE') {resolverSimpleIngreso(producto.sku,producto);return;}
   const cantidad = obtenerCantidadIngreso();
 
   if (!cantidad) {
@@ -1702,6 +1728,77 @@ function seleccionarSugerencia(producto) {
     producto.sku + ": +" + cantidad +
     "\n" + producto.descripcion
   );
+}
+
+// MODOS DE INGRESO: el modo rápido conserva la lógica original.
+function cambiarModoIngreso(modo) {
+  if (confirmandoIngreso || operacionPendienteDatos || procesandoIngreso) return;
+  modoIngreso = modo === 'SIMPLE' ? 'SIMPLE' : 'RAPIDO';
+  document.getElementById('modoIngresoRapido').classList.toggle('cantidad-activa',modoIngreso==='RAPIDO');
+  document.getElementById('modoIngresoSimple').classList.toggle('cantidad-activa',modoIngreso==='SIMPLE');
+  document.getElementById('panelIngresoRapido').classList.toggle('oculto',modoIngreso!=='RAPIDO');
+  document.getElementById('panelIngresoSimple').classList.toggle('oculto',modoIngreso!=='SIMPLE');
+  cancelarSimpleIngreso();
+  if (modoIngreso==='SIMPLE') cerrarCamaraIngreso();
+}
+function enfocarCantidadSimple() {
+  const campo=document.getElementById('simpleIngresoCantidad');
+  document.getElementById('simpleIngresoResuelto').scrollIntoView({behavior:'smooth',block:'center'});
+  setTimeout(()=>{if(modoIngreso==='SIMPLE' && productoSimpleIngreso) campo.focus({preventScroll:true});},180);
+}
+function cancelarSimpleIngreso() {
+  productoSimpleIngreso=null;
+  document.getElementById('simpleIngresoResuelto').classList.add('oculto');
+  document.getElementById('simpleIngresoCantidad').value='';
+}
+async function resolverSimpleIngreso(codigo, productoSugerido=null) {
+  if(modoIngreso!=='SIMPLE' || procesandoIngreso || confirmandoIngreso || operacionPendienteDatos) return false;
+  if(!credencialGoogle || !document.getElementById('proveedorIngreso').value.trim()) {
+    mostrarEstadoIngreso('Ingresá el proveedor y verificá la sesión.');return false;
+  }
+  codigo=String(codigo||'').trim();
+  if(!codigo && !productoSugerido) {mostrarEstadoIngreso('Ingresá el producto.');return false;}
+  procesandoIngreso=true;
+  try {
+    let producto=productoSugerido;
+    if(!producto) {
+      const existente=[...listaMercaderia.values()].find(p=>p.sku.toUpperCase()===codigo.toUpperCase() || String(p.codigoBarras||'').toUpperCase()===codigo.toUpperCase());
+      if(existente) producto={...existente};
+    }
+    if(!producto) {
+      mostrarEstadoIngreso('Buscando producto...');
+      const {respuesta,datos}=await consultarProducto(codigo);
+      if(respuesta.status===401){sesionVencida();return false;}
+      if(respuesta.ok && datos.ok) producto={...datos.producto,nuevo:false};
+      else if(respuesta.status===404) {
+        const descripcion=prompt('El SKU '+codigo+' es nuevo. Ingresá su descripción:');
+        if(!descripcion || !descripcion.trim()) {mostrarEstadoIngreso('Falta la descripción del artículo nuevo.');return false;}
+        producto={sku:codigo,codigoBarras:codigo,descripcion:descripcion.trim(),nuevo:true};
+      } else {mostrarEstadoIngreso(datos.error||'Error al consultar el producto.');errorLectura('ingreso','productoIngreso',datos.error||'Error de consulta');return false;}
+    }
+    productoSimpleIngreso={sku:producto.sku,codigoBarras:producto.codigoBarras||codigo,descripcion:producto.descripcion||producto.sku,nuevo:!!producto.nuevo};
+    cerrarCamaraIngreso();
+    document.getElementById('simpleIngresoDescripcion').textContent=productoSimpleIngreso.sku+' — '+productoSimpleIngreso.descripcion;
+    document.getElementById('simpleIngresoResuelto').classList.remove('oculto');
+    document.getElementById('productoIngreso').value='';
+    ocultarSugerencias();
+    mostrarEstadoIngreso('Producto identificado. Ingresá la cantidad.');
+    enfocarCantidadSimple();
+    return true;
+  } catch(e) {
+    console.error(e);mostrarEstadoIngreso('Error de conexión al identificar el producto.');errorLectura('ingreso','productoIngreso','Error de conexión');return false;
+  } finally {procesandoIngreso=false;}
+}
+function confirmarSimpleIngreso() {
+  if(modoIngreso!=='SIMPLE' || !productoSimpleIngreso || confirmandoIngreso || operacionPendienteDatos) return;
+  const cantidad=Number(document.getElementById('simpleIngresoCantidad').value);
+  if(!Number.isSafeInteger(cantidad)||cantidad<=0){mostrarEstadoIngreso('Ingresá una cantidad entera mayor a cero.');document.getElementById('simpleIngresoCantidad').focus();return;}
+  const p=productoSimpleIngreso;
+  if(!acumularIngreso('SKU:'+p.sku.toUpperCase(),p,cantidad)) return;
+  memoriaLectura('ingreso',p.sku,'+'+cantidad);
+  mostrarEstadoIngreso(p.sku+': +'+cantidad+' unidades.');
+  cancelarSimpleIngreso();
+  document.getElementById('productoIngreso').focus();
 }
 
 // CANTIDADES DE INGRESO
@@ -1770,6 +1867,7 @@ async function agregarManual() {
   const codigo = campo.value.trim();
 
   ocultarSugerencias();
+  if(modoIngreso==='SIMPLE') {await resolverSimpleIngreso(codigo);return;}
 
   if (await agregarProductoIngreso(codigo)) {
     campo.value = "";
@@ -2003,6 +2101,7 @@ function limpiarIngreso() {
 
   listaMercaderia.clear();
   historialIngreso = [];
+  cancelarSimpleIngreso();
   reiniciarMemoria("ingreso");
   ocultarSugerencias();
   renderizarIngreso();
@@ -2256,6 +2355,7 @@ async function abrirCamaraIngreso() {
     ausenciasIngreso = 0;
 
     mostrarEstadoIngreso("Escáner activo.");
+    video.scrollIntoView({behavior:'smooth',block:'center'});
     detectarIngreso();
 
   } catch (error) {
@@ -2292,7 +2392,10 @@ async function detectarIngreso() {
       ) {
         codigoAnteriorIngreso = codigo;
         document.getElementById("productoIngreso").value = codigo;
-        if(await agregarProductoIngreso(codigo)) document.getElementById("productoIngreso").value = "";
+        if(modoIngreso==='SIMPLE') {
+          cerrarCamaraIngreso();
+          await resolverSimpleIngreso(codigo);
+        } else if(await agregarProductoIngreso(codigo)) document.getElementById("productoIngreso").value = "";
       }
     }
 
