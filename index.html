@@ -191,6 +191,12 @@ input[readonly] { background: #e9edf0; }
 .boton-cancelar-remito {background:#a12d32;font-size:15px;margin-top:12px}
 .boton-finalizar-remito {background:#176b40;font-weight:bold;min-height:64px;border:2px solid #11552f}
 .aviso-cajas-completas {background:#e3f5e9;color:#11552f;font-weight:bold;text-align:center;border-radius:10px;padding:15px;margin:8px 0}
+.historial-tabs {display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0}
+.historial-tabs button {margin:0;font-size:15px;padding:13px 6px}
+.historial-caja {border:1px solid #d8e0e6;border-radius:10px;margin:9px 0;background:white;overflow:hidden}
+.historial-caja summary {padding:14px 10px;cursor:pointer;font-weight:bold;color:#175b37}
+.historial-caja-contenido {padding:0 10px 10px}
+.historial-caja .fila-total-recepcion {font-weight:normal}
 .panel-consulta-recepcion {background:#f2f6f8;border:1px solid #d7e0e5;border-radius:12px;padding:12px;margin:12px 0;max-height:65vh;overflow:auto}
 .fila-total-recepcion {padding:9px 4px;border-bottom:1px solid #d6dee2;font-size:14px;overflow-wrap:anywhere}
 .fila-total-recepcion strong {color:#175b37}
@@ -223,6 +229,11 @@ input[readonly] { background: #e9edf0; }
       <span class="icono">📋</span>
       Armado de pedidos
       <small>Próximamente</small>
+    </button>
+    <button onclick="abrirModulo('historial')">
+      <span class="icono">📚</span>
+      Historial de remitos
+      <small>Por cajas y totales</small>
     </button>
     <button onclick="abrirModulo('exterior')">
       <span class="icono">🚚</span>
@@ -283,7 +294,6 @@ input[readonly] { background: #e9edf0; }
     <div id="campoBultos"><label for="bultosDeclarados">Bultos declarados por el transporte</label>
       <input id="bultosDeclarados" autocomplete="off" type="number" inputmode="numeric" min="1" step="1" placeholder="Ej.: 72"></div>
     <button id="botonIniciarRecepcion" onclick="iniciarRecepcion()">INICIAR REMITO</button>
-    <button class="secundario" onclick="abrirHistorialRemitos()">📚 HISTORIAL DE REMITOS</button>
     </div>
     <div id="contenidoRecepcion" class="oculto">
       <div class="recepcion-barra"><strong>📦 RECEPCIÓN EN CURSO</strong><button type="button" class="config-cajas-btn" onclick="alternarConfigRecepcion()" aria-label="Configuración del remito">⚙️</button></div>
@@ -293,8 +303,7 @@ input[readonly] { background: #e9edf0; }
       <div id="estadoCajaIngreso" class="nota"></div>
       <div id="configRecepcion" class="oculto config-recepcion">
         <h4>⚙️ Gestión del remito</h4>
-        <button class="secundario" onclick="abrirHistorialRemitos()">📚 HISTORIAL DE REMITOS</button>
-        <button class="secundario" onclick="mostrarCajasGuardadas()">VER CAJAS GUARDADAS / BORRAR</button>
+            <button class="secundario" onclick="mostrarCajasGuardadas()">VER CAJAS GUARDADAS / BORRAR</button>
         <div id="listaCajasGuardadas"></div>
         <button class="secundario" onclick="ajustarControlBultos()">MODIFICAR BULTOS DECLARADOS</button>
       </div>
@@ -381,11 +390,19 @@ input[readonly] { background: #e9edf0; }
 </section>
 
 <section id="pantallaHistorialRemitos" class="oculto">
-  <button class="secundario" onclick="volverHistorialIngreso()">← VOLVER A INGRESO</button>
+  <button class="secundario" onclick="volverMenu()">← VOLVER AL MENÚ</button>
   <div class="panel"><h3>📚 Historial de remitos</h3>
     <button onclick="cargarHistorialRemitos()">ACTUALIZAR HISTORIAL</button>
     <div id="listaHistorialRemitos"></div>
-    <div id="detalleHistorialRemito" class="panel-consulta-recepcion oculto"></div>
+    <div id="detalleHistorialRemito" class="panel-consulta-recepcion oculto">
+      <div id="cabeceraDetalleHistorial"></div>
+      <div class="historial-tabs">
+        <button id="tabHistorialCajas" class="cantidad-activa" onclick="cambiarPestanaHistorial('cajas')">📦 POR CAJAS</button>
+        <button id="tabHistorialTotales" onclick="cambiarPestanaHistorial('totales')">📋 TOTALES</button>
+      </div>
+      <div id="historialContenidoCajas"></div>
+      <div id="historialContenidoTotales" class="oculto"></div>
+    </div>
   </div>
 </section>
 
@@ -707,6 +724,7 @@ function mostrarPantalla(id) {
     "pantallaMenu",
     "pantallaStock",
     "pantallaIngreso",
+    "pantallaHistorialRemitos",
     "pantallaExterno",
     "pantallaCajones",
     "pantallaDetalleCajon",
@@ -742,6 +760,12 @@ function abrirModulo(modulo) {
     actualizarFechaIngreso();
     mostrarPantalla("pantallaIngreso");
     restaurarRecepcionLocal();
+    return;
+  }
+
+  if (modulo === "historial") {
+    mostrarPantalla("pantallaHistorialRemitos");
+    cargarHistorialRemitos();
     return;
   }
 
@@ -2330,13 +2354,15 @@ async function verTotalRecepcion(){
   }catch(e){panel.textContent='Error al consultar el total: '+e.message}
 }
 function abrirHistorialRemitos(){
-  document.getElementById('pantallaIngreso').classList.add('oculto');
-  document.getElementById('pantallaHistorialRemitos').classList.remove('oculto');
-  cargarHistorialRemitos();
+  abrirModulo('historial');
 }
-function volverHistorialIngreso(){
-  document.getElementById('pantallaHistorialRemitos').classList.add('oculto');
-  document.getElementById('pantallaIngreso').classList.remove('oculto');
+function volverHistorialIngreso(){ volverMenu(); }
+function cambiarPestanaHistorial(pestana){
+  const cajas=pestana==='cajas';
+  document.getElementById('historialContenidoCajas').classList.toggle('oculto',!cajas);
+  document.getElementById('historialContenidoTotales').classList.toggle('oculto',cajas);
+  document.getElementById('tabHistorialCajas').classList.toggle('cantidad-activa',cajas);
+  document.getElementById('tabHistorialTotales').classList.toggle('cantidad-activa',!cajas);
 }
 async function cargarHistorialRemitos(){
   const lista=document.getElementById('listaHistorialRemitos');lista.textContent='Cargando historial...';
@@ -2352,15 +2378,31 @@ async function cargarHistorialRemitos(){
   }catch(e){lista.textContent='Error al cargar el historial: '+e.message}
 }
 async function verDetalleHistorial(remitoId){
-  const panel=document.getElementById('detalleHistorialRemito');panel.classList.remove('oculto');panel.textContent='Consultando remito...';
+  const panel=document.getElementById('detalleHistorialRemito');panel.classList.remove('oculto');
+  const cab=document.getElementById('cabeceraDetalleHistorial');
+  const cajas=document.getElementById('historialContenidoCajas');
+  const totales=document.getElementById('historialContenidoTotales');
+  cab.textContent='Consultando remito...';cajas.replaceChildren();totales.replaceChildren();
+  cambiarPestanaHistorial('cajas');
   try{
-    const r=await consultarHistorialRecepciones('detalle',remitoId);panel.replaceChildren();
-    lineaRecepcion(panel,r.recepcion.remito+' · '+r.recepcion.proveedor,r.recepcion.fecha+' | '+r.recepcion.estado);
-    lineaRecepcion(panel,'TOTAL: '+r.articulosDiferentes+' SKU · '+r.recepcion.unidades+' unidades · '+r.recepcion.cajas+' cajas',r.recepcion.control==='DEFINIDO'?'Bultos declarados: '+r.recepcion.declarados:'Bultos indefinidos');
-    for(const c of r.cajas)lineaRecepcion(panel,'Caja '+c.numero,c.articulos+' artículos · '+c.unidades+' unidades');
-    lineaRecepcion(panel,'PRODUCTOS CONTABILIZADOS');
-    for(const p of r.productos)lineaRecepcion(panel,p.sku+' — '+p.cantidad+' unidades',p.descripcion+' | Cajas: '+[...new Set(p.cajas)].join(', '));
-  }catch(e){panel.textContent='Error al consultar remito: '+e.message}
+    const r=await consultarHistorialRecepciones('detalle',remitoId);
+    cab.replaceChildren();
+    lineaRecepcion(cab,r.recepcion.remito+' · '+r.recepcion.proveedor,r.recepcion.fecha+' | '+r.recepcion.estado);
+    lineaRecepcion(cab,'TOTAL: '+r.articulosDiferentes+' SKU · '+r.recepcion.unidades+' unidades · '+r.recepcion.cajas+' cajas',r.recepcion.control==='DEFINIDO'?'Bultos declarados: '+r.recepcion.declarados:'Bultos indefinidos');
+    if(!r.cajas.length)lineaRecepcion(cajas,'Este remito no tiene cajas vigentes.');
+    for(const c of r.cajas){
+      const detalle=document.createElement('details');detalle.className='historial-caja';
+      const titulo=document.createElement('summary');
+      titulo.textContent='Caja '+c.numero+' · '+c.articulos+' artículos · '+c.unidades+' unidades';
+      detalle.appendChild(titulo);
+      const contenido=document.createElement('div');contenido.className='historial-caja-contenido';
+      for(const p of (c.productos||[]))lineaRecepcion(contenido,p.sku+' — '+p.cantidad+' unidades',p.descripcion);
+      if(!(c.productos||[]).length)lineaRecepcion(contenido,'Sin productos');
+      detalle.appendChild(contenido);cajas.appendChild(detalle);
+    }
+    if(!r.productos.length)lineaRecepcion(totales,'Este remito no tiene productos vigentes.');
+    for(const p of r.productos)lineaRecepcion(totales,p.sku+' — '+p.cantidad+' unidades',p.descripcion);
+  }catch(e){cab.textContent='Error al consultar remito: '+e.message}
 }
 function alternarConfigRecepcion(){
   document.getElementById("configRecepcion").classList.toggle("oculto");
