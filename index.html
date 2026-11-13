@@ -887,7 +887,7 @@ async function abrirDepositoExterno(id) {
     lista.replaceChildren();
     for (const cajon of cajones) {
       const boton = document.createElement("button");
-      boton.textContent = `${String(cajon.numero).padStart(2,"0")} · ${cajon.skuDiferentes} PRODUCTOS`;
+      boton.textContent = `${String(cajon.numero).padStart(2,"0")} · ${cajon.nombre || "CAJON " + String(cajon.numero).padStart(2,"0")} · ${cajon.skuDiferentes} PRODUCTOS`;
       boton.title = `${cajon.unidades} unidades`;
       if (!(Number(cajon.unidades)>0)) { boton.classList.add("cajon-vacio"); boton.textContent += " · VACÍO"; }
       boton.addEventListener("click", () => abrirDetalleCajon(cajon));
