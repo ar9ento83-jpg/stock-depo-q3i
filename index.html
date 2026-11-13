@@ -271,11 +271,11 @@ input[readonly] { background: #e9edf0; }
     </div>
     <div id="contenidoRecepcion" class="oculto">
       <div id="cabeceraRecepcion" class="externo-fila"></div>
-      <label for="numeroCajaIngreso">N.º de caja (editable, en cualquier orden)</label>
+      <label for="numeroCajaIngreso">N.º de caja (en cualquier orden, dentro del total declarado)</label>
       <input id="numeroCajaIngreso" type="text" maxlength="100" inputmode="text" placeholder="Ej.: 18 o A-018" oninput="validarCambioCaja()">
       <div id="estadoCajaIngreso" class="nota"></div>
       <button id="botonGuardarCaja" onclick="finalizarCaja()">FINALIZAR CAJA Y GUARDAR</button>
-      <button class="secundario" onclick="mostrarCajasGuardadas()">VER CAJAS GUARDADAS / CORREGIR</button>
+      <button class="secundario" onclick="mostrarCajasGuardadas()">VER CAJAS GUARDADAS / BORRAR</button>
       <div id="listaCajasGuardadas"></div>
       <button class="secundario" onclick="ajustarControlBultos()">MODIFICAR BULTOS DECLARADOS</button>
       <button class="secundario" onclick="finalizarRemitoCajas()">FINALIZAR REMITO COMPLETO</button>
@@ -2236,7 +2236,7 @@ function validarCambioCaja(){
   }else{
     numeroCajaBloqueado='';
     const existe=resumenRecepcion?.cajas?.find(c=>c.numero===numero);
-    aviso.textContent='CAJA ACTUAL: '+numero+(existe?' — YA GUARDADA: abrila desde la lista para corregir.':' — Nueva caja.');
+    aviso.textContent=(!cajaEnRango(numero)?'NÚMERO FUERA DE RANGO (1 a '+recepcionActual.declarados+'). No se podrá guardar. — ':'')+'CAJA ACTUAL: '+numero+(existe?' — YA GUARDADA: borrala desde VER CAJAS si querés volver a contarla.':' — Nueva caja.');
   }
   guardarBorradorCaja();
 }
@@ -2257,32 +2257,33 @@ function mostrarCajasGuardadas(){
   if(!resumenRecepcion?.cajas?.length){div.textContent='Todavía no hay cajas guardadas.';return;}
   for(const c of resumenRecepcion.cajas){
     const boton=document.createElement('button');boton.className='secundario';
-    boton.textContent='CAJA '+c.numero+' — '+c.items+' artículos, '+c.unidades+' unidades — ABRIR / CORREGIR';
-    boton.onclick=()=>abrirCajaGuardada(c.numero);div.appendChild(boton);
+    boton.textContent='BORRAR CAJA '+c.numero+' — '+c.items+' artículos, '+c.unidades+' unidades';
+    boton.onclick=()=>borrarCajaGuardada(c.numero);div.appendChild(boton);
   }
 }
-async function abrirCajaGuardada(numero){
+async function borrarCajaGuardada(numero){
   if(guardandoCaja || operacionCajaPendiente)return;
-  if(listaMercaderia.size&&!confirm('Hay productos sin guardar en la caja actual. ¿Descartarlos para abrir la caja '+numero+'?'))return;
-  cerrarCamaraIngreso();
+  if(!confirm('¿BORRAR la CAJA '+numero+' completa?\n\nSe quitará del conteo y podrás volver a cargarla desde cero. No se puede deshacer esta acción desde el POS.'))return;
+  if(!confirm('Confirmá por segunda vez: BORRAR CAJA '+numero+'.'))return;
   try{
-    const r=await pedirCajas('ver-caja',{numero});
-    listaMercaderia=new Map(r.productos.map(p=>['SKU:'+p.sku.toUpperCase(),p]));
-    historialIngreso=[];revisionCajaActual=r.revision;operacionCajaPendiente=null;
-    numeroCajaBloqueado=numero;document.getElementById('numeroCajaIngreso').value=numero;
-    for(const p of r.productos)cacheProductosRecepcion.set(p.sku.toUpperCase(),p);
-    cancelarSimpleIngreso();renderizarIngreso();guardarBorradorCaja();validarCambioCaja();
-    mostrarEstadoIngreso('Caja '+numero+' abierta para corrección. Al guardar se creará una nueva revisión.');
-  }catch(e){alert('No se pudo abrir la caja: '+e.message);}
+    await pedirCajas('borrar-caja',{numero,operacionId:crypto.randomUUID().replaceAll('-','')});
+    await actualizarResumenCajas();mostrarCajasGuardadas();
+    mostrarEstadoIngreso('CAJA '+numero+' BORRADA. Podés volver a contabilizarla desde cero.');
+  }catch(e){alert('No se pudo borrar la caja: '+e.message);}
+}
+function cajaEnRango(numero){
+  if(!recepcionActual||recepcionActual.control!=='DEFINIDO')return true;
+  return /^[1-9]\d*$/.test(numero)&&Number(numero)<=Number(recepcionActual.declarados);
 }
 async function finalizarCaja(){
   if(!recepcionActual||guardandoCaja||procesandoIngreso)return;
   const numero=document.getElementById('numeroCajaIngreso').value.trim();
   if(!numero){alert('Indicá el número de caja.');return;}
+  if(!cajaEnRango(numero)){alert('Caja fuera de rango. El remito declara '+recepcionActual.declarados+' cajas: solo se permiten números del 1 al '+recepcionActual.declarados+'.');return;}
   if(!listaMercaderia.size){alert('No hay productos cargados en esta caja.');return;}
   if(operacionCajaPendiente&&operacionCajaPendiente.numero!==numero){alert('Hay un guardado pendiente de otra caja. Recuperá su número antes de reintentar.');return;}
   const existente=resumenRecepcion?.cajas?.find(c=>c.numero===numero);
-  if(existente&&!revisionCajaActual){alert('La caja '+numero+' ya está guardada. Abrila desde VER CAJAS para corregirla.');return;}
+  if(existente&&!revisionCajaActual){alert('La caja '+numero+' ya está guardada. Borrala desde VER CAJAS para volver a contabilizarla.');return;}
   if(!operacionCajaPendiente){
     const productos=[...listaMercaderia.values()].map(p=>({sku:p.sku,codigoBarras:p.codigoBarras||p.sku,descripcion:p.descripcion,cantidad:p.cantidad}));
     if(!confirm('¿Guardar CAJA '+numero+' con '+productos.length+' artículos y '+productos.reduce((s,p)=>s+p.cantidad,0)+' unidades?'))return;
