@@ -180,6 +180,15 @@ input[readonly] { background: #e9edf0; }
 /* Memoria compacta: una sola línea debajo de cada cámara */
 .memoria-lecturas { font-size:13px; font-weight:bold; color:#176b40; white-space:nowrap; overflow-x:auto; margin:5px 0; min-height:17px; }
 .memoria-lecturas.error { color:#b42318; }
+.recepcion-barra {display:flex;align-items:center;justify-content:space-between;gap:10px;background:#eaf3ed;border-radius:12px;padding:8px 12px;margin:8px 0 14px;font-size:14px;color:#176b40}
+.config-cajas-btn {width:52px;min-width:52px;height:48px;padding:5px;margin:0;background:#52616b;font-size:25px}
+.config-recepcion {padding:12px;background:#f2f4f7;border:1px solid #d8e0e6;border-radius:12px;margin:10px 0 16px}
+.config-recepcion h4 {margin:4px 0 10px}
+.boton-deshacer {display:flex;align-items:center;justify-content:center;gap:10px;font-size:25px}
+.boton-deshacer span {font-size:15px}
+.acciones-finales-caja {border-top:2px solid #e1e7eb;margin-top:20px;padding-top:15px}
+.acciones-finales-caja #botonGuardarCaja {background:#176b40;font-weight:bold;min-height:64px}
+.boton-cancelar-remito {background:#a12d32;font-size:15px;margin-top:12px}
 </style>
 </head>
 
@@ -270,15 +279,18 @@ input[readonly] { background: #e9edf0; }
     <button id="botonIniciarRecepcion" onclick="iniciarRecepcion()">INICIAR REMITO</button>
     </div>
     <div id="contenidoRecepcion" class="oculto">
+      <div class="recepcion-barra"><strong>📦 RECEPCIÓN EN CURSO</strong><button type="button" class="config-cajas-btn" onclick="alternarConfigRecepcion()" aria-label="Configuración del remito">⚙️</button></div>
       <div id="cabeceraRecepcion" class="externo-fila"></div>
       <label for="numeroCajaIngreso">N.º de caja (en cualquier orden, dentro del total declarado)</label>
       <input id="numeroCajaIngreso" type="text" maxlength="100" inputmode="text" placeholder="Ej.: 18 o A-018" oninput="validarCambioCaja()">
       <div id="estadoCajaIngreso" class="nota"></div>
-      <button id="botonGuardarCaja" onclick="finalizarCaja()">FINALIZAR CAJA Y GUARDAR</button>
-      <button class="secundario" onclick="mostrarCajasGuardadas()">VER CAJAS GUARDADAS / BORRAR</button>
-      <div id="listaCajasGuardadas"></div>
-      <button class="secundario" onclick="ajustarControlBultos()">MODIFICAR BULTOS DECLARADOS</button>
-      <button class="secundario" onclick="finalizarRemitoCajas()">FINALIZAR REMITO COMPLETO</button>
+      <div id="configRecepcion" class="oculto config-recepcion">
+        <h4>⚙️ Gestión del remito</h4>
+        <button class="secundario" onclick="mostrarCajasGuardadas()">VER CAJAS GUARDADAS / BORRAR</button>
+        <div id="listaCajasGuardadas"></div>
+        <button class="secundario" onclick="ajustarControlBultos()">MODIFICAR BULTOS DECLARADOS</button>
+        <button class="secundario" onclick="finalizarRemitoCajas()">FINALIZAR REMITO COMPLETO</button>
+      </div>
     <h4>Modalidad de carga</h4>
     <div class="cantidades" style="grid-template-columns:repeat(2,1fr)">
       <button id="modoIngresoRapido" class="cantidad-activa" onclick="cambiarModoIngreso('RAPIDO')">⚡ RÁPIDO</button>
@@ -337,7 +349,7 @@ input[readonly] { background: #e9edf0; }
     <button onclick="abrirCamaraIngreso()">
       ESCANEAR CÓDIGO
     </button>
-    <button class="secundario" onclick="cerrarCamaraIngreso()">
+    <button id="botonCerrarCamaraIngreso" class="secundario oculto" onclick="cerrarCamaraIngreso()">
       CERRAR CÁMARA
     </button>
 
@@ -348,13 +360,11 @@ input[readonly] { background: #e9edf0; }
     <h3 id="contadorIngreso">0 ítems diferentes</h3>
     <div id="listaIngreso"></div>
 
-    <button class="secundario" onclick="deshacerIngreso()">
-      DESHACER ÚLTIMO
-    </button>
-    <button class="secundario" onclick="limpiarIngreso()">
-      LIMPIAR LISTA
-    </button>
-    <p class="nota">Cada caja se guarda por separado. No uses CONFIRMAR INGRESO del sistema anterior.</p>
+    <button class="secundario boton-deshacer" onclick="deshacerIngreso()" title="Deshacer último movimiento" aria-label="Deshacer último movimiento">↶ <span>DESHACER ÚLTIMO MOVIMIENTO</span></button>
+    <div class="acciones-finales-caja">
+      <button id="botonGuardarCaja" onclick="finalizarCaja()">✓ FINALIZAR CAJA Y GUARDAR</button>
+      <button class="boton-cancelar-remito" onclick="cancelarRemitoCajas()">CANCELAR REMITO</button>
+    </div>
     </div>
   </div>
 </section>
@@ -2119,12 +2129,14 @@ function deshacerIngreso() {
   }
 
   if(guardandoCaja || operacionCajaPendiente) return;
-  const ultimo = historialIngreso.pop();
+  const ultimo = historialIngreso[historialIngreso.length-1];
 
   if (!ultimo) {
     mostrarEstadoIngreso("No hay lecturas para deshacer.");
     return;
   }
+  if(!confirm("¿Deshacer el último movimiento de carga?\nSe restarán "+ultimo.cantidad+" unidades de la caja actual."))return;
+  historialIngreso.pop();
 
   const producto = listaMercaderia.get(ultimo.clave);
   if (!producto) return;
@@ -2187,6 +2199,7 @@ function guardarBorradorCaja(){
 function mostrarRecepcionActiva(){
   document.getElementById('inicioRecepcion').classList.add('oculto');
   document.getElementById('contenidoRecepcion').classList.remove('oculto');
+  document.getElementById('configRecepcion').classList.add('oculto');
   document.getElementById('proveedorIngreso').value=recepcionActual.proveedor;
   document.getElementById('remitoIngreso').value=recepcionActual.remito;
   document.getElementById('cabeceraRecepcion').textContent='REMITO: '+recepcionActual.remito+' | PROVEEDOR: '+recepcionActual.proveedor;
@@ -2252,6 +2265,9 @@ async function actualizarResumenCajas(){
     return r;
   }catch(e){mostrarEstadoIngreso('No se pudo actualizar el control de cajas: '+e.message);}
 }
+function alternarConfigRecepcion(){
+  document.getElementById("configRecepcion").classList.toggle("oculto");
+}
 function mostrarCajasGuardadas(){
   const div=document.getElementById('listaCajasGuardadas');div.replaceChildren();
   if(!resumenRecepcion?.cajas?.length){div.textContent='Todavía no hay cajas guardadas.';return;}
@@ -2314,6 +2330,29 @@ async function ajustarControlBultos(){
   const declarados=control==='DEFINIDO'?Number(entrada):0;
   if(control==='DEFINIDO'&&(!Number.isSafeInteger(declarados)||declarados<1)){alert('Cantidad inválida.');return;}
   try{await pedirCajas('ajustar-bultos',{control,declarados});await actualizarResumenCajas();guardarBorradorCaja();}catch(e){alert(e.message);}
+}
+async function cancelarRemitoCajas(){
+  if(!recepcionActual||guardandoCaja||procesandoIngreso||operacionCajaPendiente){alert('Esperá a terminar la operación pendiente antes de cancelar.');return;}
+  const r=await actualizarResumenCajas();if(!r)return;
+  if(r.cajasContadas>0){
+    alert('Este remito ya tiene '+r.cajasContadas+' cajas guardadas. Para cancelar, primero borrá esas cajas desde el engranaje. También podés finalizar el remito para conservarlas.');
+    return;
+  }
+  if(!confirm('¿CANCELAR este remito?\nSe descartará la caja actual sin guardar. Esta acción no se puede deshacer.'))return;
+  if(!confirm('Confirmá la cancelación del remito '+recepcionActual.remito+'.'))return;
+  try{
+    await pedirCajas('cancelar-remito');
+    cerrarCamaraIngreso();
+    recepcionActual=null;revisionCajaActual=0;resumenRecepcion=null;numeroCajaBloqueado='';operacionCajaPendiente=null;
+    listaMercaderia.clear();historialIngreso=[];cacheProductosRecepcion.clear();
+    cancelarSimpleIngreso();reiniciarMemoria('ingreso');renderizarIngreso();
+    localStorage.removeItem(CLAVE_RECEPCION_LOCAL);
+    document.getElementById('contenidoRecepcion').classList.add('oculto');
+    document.getElementById('inicioRecepcion').classList.remove('oculto');
+    document.getElementById('remitoIngreso').value='';
+    document.getElementById('listaCajasGuardadas').replaceChildren();
+    mostrarEstadoIngreso('Remito cancelado. Podés iniciar uno nuevo.');
+  }catch(e){alert('No se pudo cancelar: '+e.message);}
 }
 async function finalizarRemitoCajas(){
   if(!recepcionActual||guardandoCaja)return;
@@ -2577,6 +2616,7 @@ async function abrirCamaraIngreso() {
     await video.play();
 
     escaneandoIngreso = true;
+    document.getElementById("botonCerrarCamaraIngreso").classList.remove("oculto");
     codigoAnteriorIngreso = null;
     ausenciasIngreso = 0;
 
@@ -2636,6 +2676,7 @@ async function detectarIngreso() {
 
 function cerrarCamaraIngreso() {
   escaneandoIngreso = false;
+  document.getElementById("botonCerrarCamaraIngreso")?.classList.add("oculto");
 
   if (streamIngreso) {
     streamIngreso.getTracks().forEach(
