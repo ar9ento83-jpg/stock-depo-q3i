@@ -205,6 +205,9 @@ input[readonly] { background: #e9edf0; }
 .fila-total-recepcion {padding:9px 4px;border-bottom:1px solid #d6dee2;font-size:14px;overflow-wrap:anywhere}
 .fila-total-recepcion strong {color:#175b37}
 
+#sugerenciasFactura{margin:5px 0 10px}#sugerenciasFactura .sugerencia{width:100%;text-align:left}
+.lista-factura-compacta{margin:8px 0;padding:7px 9px;background:#f4f7f9;border-radius:8px;font-size:13px}
+.factura-lineas-resumen{max-height:185px;overflow-y:auto}.factura-linea{padding:3px 0;border-bottom:1px solid #e1e5e8;font-size:12px}
 </style>
 </head>
 
@@ -404,6 +407,7 @@ input[readonly] { background: #e9edf0; }
       <button class="secundario" onclick="imprimirInformeRemito()">🖨️ IMPRIMIR INFORME</button>
       <button class="secundario" onclick="abrirComparacionFactura()">⚖️ COMPARAR CON FACTURA</button>
       <div id="panelComparacionFactura" class="panel-consulta-recepcion oculto">
+        <button class="secundario" onclick="cerrarComparacionFactura()">← VOLVER AL DETALLE DEL REMITO</button>
         <h3>Comparación con factura del proveedor</h3>
         <p id="ayudaComparacionFactura" class="nota"></p>
         <div id="opcionesComparacionFactura">
@@ -412,16 +416,19 @@ input[readonly] { background: #e9edf0; }
         </div>
         <div id="formComparacionFactura" class="oculto">
           <h3 id="tituloModoComparacion"></h3>
-          <label>SKU de factura<input id="facturaSku" autocomplete="off" placeholder="SKU" onkeydown="if(event.key==='Enter') agregarLineaFactura()"></label>
+          <label>SKU o descripción del producto<input id="facturaSku" autocomplete="off" placeholder="Buscar SKU o descripción" oninput="programarSugerenciasFactura()" onkeydown="if(event.key==='Enter') agregarLineaFactura()"></label>
+          <div id="sugerenciasFactura" class="oculto"></div>
+          <p class="nota">Podés buscar por descripción y seleccionar el SKU interno. Si el proveedor usa otro código, elegí el artículo correspondiente antes de agregarlo.</p>
           <label>Cantidad facturada<input id="facturaCantidad" type="number" min="1" step="1" inputmode="numeric" autocomplete="off" placeholder="Cantidad" onkeydown="if(event.key==='Enter') agregarLineaFactura()"></label>
           <label id="campoCajaFactura">Número de caja<input id="facturaCaja" type="number" min="1" step="1" inputmode="numeric" autocomplete="off" placeholder="Caja" onkeydown="if(event.key==='Enter') agregarLineaFactura()"></label>
           <button onclick="agregarLineaFactura()">+ AGREGAR PRODUCTO DE FACTURA</button>
-          <div id="lineasFacturaIngresadas"></div>
+          <div id="lineasFacturaIngresadas" class="lista-factura-compacta"></div>
+          <button class="secundario" onclick="deshacerUltimaLineaFactura()">↶ DESHACER ÚLTIMO PRODUCTO</button>
           <button class="secundario" onclick="imprimirComparacionFactura()">🖨️ IMPRIMIR COMPARACIÓN</button>
           <button class="secundario" onclick="elegirModoComparacion('')">CAMBIAR MODALIDAD</button>
         </div>
       </div>
-      <div class="historial-tabs">
+      <div id="pestanasHistorialRemito" class="historial-tabs">
         <button id="tabHistorialCajas" class="cantidad-activa" onclick="cambiarPestanaHistorial('cajas')">📦 POR CAJAS</button>
         <button id="tabHistorialTotales" onclick="cambiarPestanaHistorial('totales')">📋 TOTALES</button>
       </div>
@@ -2556,21 +2563,70 @@ function reiniciarComparacionFactura(){
   const panel=document.getElementById('panelComparacionFactura');
   if(panel)panel.classList.add('oculto');
 }
+let temporizadorFactura=null, solicitudFactura=0, skuFacturaSeleccionado='';
+function cerrarComparacionFactura(){
+  document.getElementById('panelComparacionFactura').classList.add('oculto');
+  document.getElementById('pestanasHistorialRemito').classList.remove('oculto');
+  document.getElementById('historialContenidoCajas').classList.toggle('oculto',document.getElementById('tabHistorialTotales').classList.contains('cantidad-activa'));
+  document.getElementById('historialContenidoTotales').classList.toggle('oculto',!document.getElementById('tabHistorialTotales').classList.contains('cantidad-activa'));
+  document.getElementById('cabeceraDetalleHistorial').classList.remove('oculto');
+  document.getElementById('listaHistorialRemitos').classList.remove('oculto');
+}
+function programarSugerenciasFactura(){
+  skuFacturaSeleccionado='';
+  clearTimeout(temporizadorFactura);
+  const q=document.getElementById('facturaSku').value.trim(),panel=document.getElementById('sugerenciasFactura');
+  if(q.length<2){panel.replaceChildren();panel.classList.add('oculto');return;}
+  const solicitud=++solicitudFactura;
+  panel.textContent='Buscando productos...';panel.classList.remove('oculto');
+  temporizadorFactura=setTimeout(async()=>{
+    try{
+      const respuesta=await fetch(API+'/buscar-productos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:credencialGoogle,busqueda:q})});
+      const datos=await respuesta.json();
+      if(solicitud!==solicitudFactura)return;
+      panel.replaceChildren();
+      if(!respuesta.ok||!datos.ok)throw Error(datos.error||'No se pudo buscar');
+      if(!(datos.productos||[]).length){panel.textContent='Sin coincidencias. Podés ingresar el SKU manualmente.';return;}
+      for(const producto of datos.productos){
+        const b=document.createElement('button');b.type='button';b.className='sugerencia';
+        const sku=document.createElement('span');sku.className='sku';sku.textContent=producto.sku||'';
+        const descripcion=document.createElement('span');descripcion.className='descripcion';descripcion.textContent=producto.descripcion||'';
+        const detalle=document.createElement('span');detalle.className='detalle';detalle.textContent=[producto.categoria,producto.proveedor].filter(Boolean).join(' · ');
+        b.append(sku,descripcion,detalle);
+        b.onclick=()=>{skuFacturaSeleccionado=String(producto.sku||'').trim().toUpperCase();document.getElementById('facturaSku').value=skuFacturaSeleccionado;panel.replaceChildren();panel.classList.add('oculto');document.getElementById('facturaCantidad').focus();};
+        panel.appendChild(b);
+      }
+    }catch(e){if(solicitud===solicitudFactura)panel.textContent=e.message;}
+  },300);
+}
+function deshacerUltimaLineaFactura(){
+  if(!lineasComparacionFactura.length)return;
+  const ultima=lineasComparacionFactura.pop();
+  document.getElementById('facturaSku').value=ultima.sku;
+  document.getElementById('facturaCantidad').value=ultima.cantidad;
+  if(modoComparacionFactura==='caja')document.getElementById('facturaCaja').value=ultima.caja;
+  renderizarLineasFactura();
+}
 function abrirComparacionFactura(){
   if(!detalleHistorialActual){alert('Seleccioná un remito antes de comparar.');return;}
   const panel=document.getElementById('panelComparacionFactura');
   panel.classList.toggle('oculto');
   if(!panel.classList.contains('oculto')){
+    document.getElementById('pestanasHistorialRemito').classList.add('oculto');
+    document.getElementById('historialContenidoCajas').classList.add('oculto');
+    document.getElementById('historialContenidoTotales').classList.add('oculto');
+    document.getElementById('cabeceraDetalleHistorial').classList.add('oculto');
+    document.getElementById('listaHistorialRemitos').classList.add('oculto');
     if(!modoComparacionFactura){
       const respuesta=prompt('¿Cómo querés comparar la factura?\n\n1 - POR CAJA (SKU, cantidad y caja)\n2 - TOTAL DEL REMITO (SKU y cantidad)','2');
-      if(respuesta===null){panel.classList.add('oculto');return;}
+      if(respuesta===null){cerrarComparacionFactura();return;}
       const valor=respuesta.trim().toLowerCase();
       if(valor==='1'||valor==='caja'||valor==='por caja')elegirModoComparacion('caja');
       else if(valor==='2'||valor==='total'||valor==='por total')elegirModoComparacion('total');
       else alert('Elegí 1 para comparar por caja o 2 para comparar el total.');
     }
     panel.scrollIntoView({behavior:'smooth',block:'start'});
-  }
+  }else cerrarComparacionFactura();
 }
 function elegirModoComparacion(modo){
   if(modoComparacionFactura && modo && modo!==modoComparacionFactura && lineasComparacionFactura.length && !confirm('¿Cambiar modalidad? Se descartarán los datos ingresados en la modalidad anterior.'))return;
@@ -2586,38 +2642,40 @@ function elegirModoComparacion(modo){
 }
 function agregarLineaFactura(){
   if(!modoComparacionFactura)return;
-  const sku=document.getElementById('facturaSku').value.trim().toUpperCase();
+  const sku=(skuFacturaSeleccionado||document.getElementById('facturaSku').value).trim().toUpperCase();
   const cantidad=Number(document.getElementById('facturaCantidad').value);
   const caja=modoComparacionFactura==='caja'?String(document.getElementById('facturaCaja').value).trim():'';
   if(!sku||!Number.isSafeInteger(cantidad)||cantidad<=0){alert('Ingresá un SKU y una cantidad entera mayor que cero.');return;}
   if(modoComparacionFactura==='caja'&&(!/^[1-9]\d*$/.test(caja))){alert('Ingresá un número de caja válido.');return;}
-  const existente=lineasComparacionFactura.find(p=>p.sku===sku&&p.caja===caja);
-  if(existente)existente.cantidad+=cantidad;
-  else lineasComparacionFactura.push({sku,cantidad,caja});
+  lineasComparacionFactura.push({sku,cantidad,caja});
+  skuFacturaSeleccionado='';
+  ++solicitudFactura;clearTimeout(temporizadorFactura);
+  document.getElementById('sugerenciasFactura').replaceChildren();
+  document.getElementById('sugerenciasFactura').classList.add('oculto');
   document.getElementById('facturaSku').value='';
   document.getElementById('facturaCantidad').value='';
+  if(modoComparacionFactura==='caja')document.getElementById('facturaCaja').value='';
   document.getElementById('facturaSku').focus();
   renderizarLineasFactura();
-}
-function eliminarLineaFactura(indice){
-  lineasComparacionFactura.splice(indice,1);renderizarLineasFactura();
 }
 function renderizarLineasFactura(){
   const panel=document.getElementById('lineasFacturaIngresadas');panel.replaceChildren();
   if(!lineasComparacionFactura.length){panel.textContent='Todavía no ingresaste productos de la factura.';return;}
-  const titulo=document.createElement('p');titulo.textContent='FACTURA: '+lineasComparacionFactura.length+' registros · '+lineasComparacionFactura.reduce((n,p)=>n+p.cantidad,0)+' unidades';panel.appendChild(titulo);
-  lineasComparacionFactura.forEach((p,i)=>{
-    const fila=document.createElement('div');fila.className='fila-total-recepcion';
-    const texto=document.createElement('span');texto.textContent=p.sku+' · '+p.cantidad+' u.'+(p.caja?' · caja '+p.caja:'');fila.appendChild(texto);
-    const boton=document.createElement('button');boton.className='secundario';boton.textContent='QUITAR';boton.onclick=()=>eliminarLineaFactura(i);fila.appendChild(boton);panel.appendChild(fila);
+  const titulo=document.createElement('p');titulo.textContent='FACTURA: '+lineasComparacionFactura.length+' lecturas · '+lineasComparacionFactura.reduce((n,p)=>n+p.cantidad,0)+' unidades';panel.appendChild(titulo);
+  const lista=document.createElement('div');lista.className='factura-lineas-resumen';
+  lineasComparacionFactura.slice(-12).forEach(p=>{
+    const fila=document.createElement('div');fila.className='factura-linea';
+    fila.textContent=p.sku+'  +'+p.cantidad+(p.caja?'  · Caja '+p.caja:'');lista.appendChild(fila);
   });
+  panel.appendChild(lista);
+  if(lineasComparacionFactura.length>12){const nota=document.createElement('small');nota.textContent='Se muestran las últimas 12 lecturas. El informe incluye todas.';panel.appendChild(nota);}
 }
 function construirComparacionFactura(){
   const r=detalleHistorialActual;
   if(!r||!modoComparacionFactura)throw Error('Seleccioná un remito y una modalidad.');
   if(!lineasComparacionFactura.length)throw Error('Ingresá los productos de la factura antes de imprimir.');
   const fisicos=new Map(),facturados=new Map();
-  const clave=(sku,caja)=>modoComparacionFactura==='caja'?JSON.stringify([sku,caja]):sku;
+  const clave=(sku,caja)=>modoComparacionFactura==='caja'?JSON.stringify([sku,String(Number(caja))]):sku;
   const acumular=(map,sku,caja,cantidad,descripcion='')=>{
     const k=clave(sku,caja);const anterior=map.get(k)||{sku,caja,cantidad:0,descripcion:''};
     anterior.cantidad+=Number(cantidad)||0;
