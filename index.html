@@ -422,6 +422,8 @@ input[readonly] { background: #e9edf0; }
           <label>Cantidad facturada<input id="facturaCantidad" type="number" min="1" step="1" inputmode="numeric" autocomplete="off" placeholder="Cantidad" onkeydown="if(event.key==='Enter') agregarLineaFactura()"></label>
           <label id="campoCajaFactura">Número de caja<input id="facturaCaja" type="number" min="1" step="1" inputmode="numeric" autocomplete="off" placeholder="Caja" onkeydown="if(event.key==='Enter') agregarLineaFactura()"></label>
           <button onclick="agregarLineaFactura()">+ AGREGAR PRODUCTO DE FACTURA</button>
+          <button class="secundario" onclick="cargarFacturaDesdeSheets()">📄 CARGAR DESDE GOOGLE SHEETS</button>
+          <p class="nota">Hoja FACTURAS_PROVEEDORES: RECEPCION_ID | REMITO | SKU | CANTIDAD | CAJA | DESCRIPCION. La caja es obligatoria para comparar POR CAJA. La importación reemplaza la lista manual después de confirmar.</p>
           <div id="lineasFacturaIngresadas" class="lista-factura-compacta"></div>
           <button class="secundario" onclick="deshacerUltimaLineaFactura()">↶ DESHACER ÚLTIMO PRODUCTO</button>
           <button class="secundario" onclick="imprimirComparacionFactura()">🖨️ IMPRIMIR COMPARACIÓN</button>
@@ -2637,8 +2639,25 @@ function elegirModoComparacion(modo){
   document.getElementById('campoCajaFactura').classList.toggle('oculto',modo!=='caja');
   document.getElementById('tituloModoComparacion').textContent=modo==='caja'?'Factura por caja':'Factura total del remito';
   document.getElementById('ayudaComparacionFactura').textContent=modo==='caja'?'Ingresá SKU, cantidad y número de caja según la factura.':'Ingresá cada SKU y cantidad de la factura. Se suman todas las cajas del conteo físico.';
+  if(modo&&detalleHistorialActual?.recepcion?.remitoId)document.getElementById('ayudaComparacionFactura').textContent+=' RECEPCION_ID para Google Sheets: '+detalleHistorialActual.recepcion.remitoId;
   renderizarLineasFactura();
   if(modo)document.getElementById('facturaSku').focus();
+}
+async function cargarFacturaDesdeSheets(){
+  if(!detalleHistorialActual||!modoComparacionFactura){alert('Primero elegí un remito y una modalidad.');return;}
+  const id=detalleHistorialActual.recepcion.remitoId;
+  if(!id){alert('No se encontró el identificador del remito.');return;}
+  if(lineasComparacionFactura.length&&!confirm('La importación reemplazará los productos cargados manualmente. ¿Continuar?'))return;
+  try{
+    const respuesta=await fetch(API+'/facturas-proveedores',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:credencialGoogle,accion:'cargar',remitoId:id})});
+    const datos=await respuesta.json();
+    if(!respuesta.ok||!datos.ok)throw Error(datos.error||'No se pudo leer FACTURAS_PROVEEDORES');
+    if(!datos.productos.length){alert('No hay productos para este remito en FACTURAS_PROVEEDORES. La hoja se crea automáticamente en la primera consulta. Usá el RECEPCION_ID exacto de este remito.');return;}
+    if(modoComparacionFactura==='caja'&&datos.productos.some(p=>!p.caja)){alert('Hay productos sin número de caja en Google Sheets. Completá CAJA para comparar POR CAJA, o cambiá a TOTALES.');return;}
+    lineasComparacionFactura=datos.productos.map(p=>({sku:String(p.sku).trim().toUpperCase(),cantidad:Number(p.cantidad),caja:modoComparacionFactura==='caja'?String(Number(p.caja)):''}));
+    renderizarLineasFactura();
+    alert('Factura importada: '+lineasComparacionFactura.length+' líneas y '+lineasComparacionFactura.reduce((n,p)=>n+p.cantidad,0)+' unidades.');
+  }catch(error){alert('No se pudo importar la factura: '+error.message);}
 }
 function agregarLineaFactura(){
   if(!modoComparacionFactura)return;
