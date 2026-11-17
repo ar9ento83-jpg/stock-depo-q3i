@@ -423,7 +423,7 @@ input[readonly] { background: #e9edf0; }
           <label id="campoCajaFactura">Número de caja<input id="facturaCaja" type="number" min="1" step="1" inputmode="numeric" autocomplete="off" placeholder="Caja" onkeydown="if(event.key==='Enter') agregarLineaFactura()"></label>
           <button onclick="agregarLineaFactura()">+ AGREGAR PRODUCTO DE FACTURA</button>
           <button class="secundario" onclick="cargarFacturaDesdeSheets()">📄 CARGAR DESDE GOOGLE SHEETS</button>
-          <p class="nota">Hoja FACTURAS_PROVEEDORES: RECEPCION_ID | REMITO | SKU | CANTIDAD | CAJA | DESCRIPCION. La caja es obligatoria para comparar POR CAJA. La importación reemplaza la lista manual después de confirmar.</p>
+          <p class="nota">Hoja FACTURAS_PROVEEDORES: RECEPCION_ID | REMITO | SKU | CANTIDAD | CAJA | DESCRIPCION. La caja es obligatoria para comparar POR CAJA. Podés colocar el RECEPCION_ID solo en la primera fila del bloque de artículos y dejar vacías las celdas de ID siguientes; al importar, se completan automáticamente hasta el próximo ID o remito diferente. Si completás REMITO en cada fila, también se asigna el ID cuando ese número es único. La importación reemplaza la lista manual después de confirmar.</p>
           <div id="lineasFacturaIngresadas" class="lista-factura-compacta"></div>
           <button class="secundario" onclick="deshacerUltimaLineaFactura()">↶ DESHACER ÚLTIMO PRODUCTO</button>
           <button class="secundario" onclick="imprimirComparacionFactura()">🖨️ IMPRIMIR COMPARACIÓN</button>
@@ -2656,7 +2656,7 @@ async function cargarFacturaDesdeSheets(){
     if(modoComparacionFactura==='caja'&&datos.productos.some(p=>!p.caja)){alert('Hay productos sin número de caja en Google Sheets. Completá CAJA para comparar POR CAJA, o cambiá a TOTALES.');return;}
     lineasComparacionFactura=datos.productos.map(p=>({sku:String(p.sku).trim().toUpperCase(),cantidad:Number(p.cantidad),caja:modoComparacionFactura==='caja'?String(Number(p.caja)):''}));
     renderizarLineasFactura();
-    alert('Factura importada: '+lineasComparacionFactura.length+' líneas y '+lineasComparacionFactura.reduce((n,p)=>n+p.cantidad,0)+' unidades.');
+    alert('Factura importada: '+lineasComparacionFactura.length+' líneas y '+lineasComparacionFactura.reduce((n,p)=>n+p.cantidad,0)+' unidades.'+(datos.idsCompletados?' Se completó el RECEPCION_ID en '+datos.idsCompletados+' filas de Google Sheets.':''));
   }catch(error){alert('No se pudo importar la factura: '+error.message);}
 }
 function agregarLineaFactura(){
@@ -2696,7 +2696,7 @@ function construirComparacionFactura(){
   const fisicos=new Map(),facturados=new Map();
   const clave=(sku,caja)=>modoComparacionFactura==='caja'?JSON.stringify([sku,String(Number(caja))]):sku;
   const acumular=(map,sku,caja,cantidad,descripcion='')=>{
-    const k=clave(sku,caja);const anterior=map.get(k)||{sku,caja,cantidad:0,descripcion:''};
+    const k=clave(sku,caja),anterior=map.get(k)||{sku,caja,cantidad:0,descripcion:''};
     anterior.cantidad+=Number(cantidad)||0;
     if(descripcion)anterior.descripcion=descripcion;
     map.set(k,anterior);
@@ -2707,35 +2707,52 @@ function construirComparacionFactura(){
     for(const p of (r.productos||[]))acumular(fisicos,String(p.sku).trim().toUpperCase(),'',p.cantidad,p.descripcion);
   }
   for(const p of lineasComparacionFactura)acumular(facturados,p.sku,p.caja,p.cantidad);
-  const claves=new Set([...fisicos.keys(),...facturados.keys()]);
   const coincidencias=[],sobrantes=[],faltantes=[];
-  for(const k of claves){
+  for(const k of new Set([...fisicos.keys(),...facturados.keys()])){
     const a=fisicos.get(k),b=facturados.get(k);
-    const comunes=Math.min(a?.cantidad||0,b?.cantidad||0);
-    const base={sku:(a||b).sku,caja:(a||b).caja,descripcion:a?.descripcion||'',fisico:a?.cantidad||0,factura:b?.cantidad||0};
-    if(comunes)coincidencias.push({...base,cantidad:comunes});
-    if(base.fisico>comunes)sobrantes.push({...base,cantidad:base.fisico-comunes});
-    if(base.factura>comunes)faltantes.push({...base,cantidad:base.factura-comunes});
+    const fisico=a?.cantidad||0,factura=b?.cantidad||0;
+    const registro={sku:(a||b).sku,caja:(a||b).caja,descripcion:a?.descripcion||b?.descripcion||'',fisico,factura,diferencia:fisico-factura};
+    if(fisico===factura)coincidencias.push(registro);
+    else if(fisico>factura)sobrantes.push(registro);
+    else faltantes.push(registro);
   }
   const ordenar=(x,y)=>(Number(x.caja||0)-Number(y.caja||0))||x.sku.localeCompare(y.sku);
   return {r,coincidencias:coincidencias.sort(ordenar),sobrantes:sobrantes.sort(ordenar),faltantes:faltantes.sort(ordenar)};
 }
 function imprimirComparacionFactura(){
   let datos;
-  try{datos=construirComparacionFactura();}catch(e){alert(e.message);return;}
+  try{datos=construirComparacionFactura();}catch(error){alert(error.message);return;}
   const {r,coincidencias,sobrantes,faltantes}=datos,e=escaparInforme;
-  const etiqueta=p=>e(p.sku)+(modoComparacionFactura==='caja'?' · Caja '+e(p.caja):'');
-  const fila=(izq,der,cantIzq,cantDer,estado)=>`<tr><td>${izq?etiqueta(izq):''}</td><td class="num">${cantIzq||''}</td><td>${izq?e(izq.descripcion):''}</td><td>${der?etiqueta(der):''}</td><td class="num">${cantDer||''}</td><td class="estado">${e(estado)}</td></tr>`;
+  const porCaja=modoComparacionFactura==='caja';
+  const etiqueta=p=>e(p.sku)+(porCaja?' · Caja '+e(p.caja):'');
+  const relacionados=p=>{
+    if(!porCaja)return [];
+    const opuestos=p.diferencia>0?faltantes:sobrantes;
+    return opuestos.filter(q=>q.caja===p.caja && q.sku!==p.sku);
+  };
+  const detalle=p=>{
+    const ubicacion=porCaja?' en la caja '+p.caja:'';
+    const diferencia=Math.abs(p.diferencia);
+    let frase='Se esperaban '+p.factura+' unidades de '+p.sku+' y llegaron '+p.fisico+ubicacion+'. Diferencia: '+diferencia+' '+(p.diferencia>0?'de más':'de menos')+'.';
+    const otros=relacionados(p);
+    if(otros.length){
+      frase+=' En esa misma caja también '+otros.map(q=>(q.diferencia>0?'sobran ':'faltan ')+Math.abs(q.diferencia)+' unidades de '+q.sku).join('; ')+'.';
+      if(otros.some(q=>Math.abs(q.diferencia)===diferencia))frase+=' Posible reemplazo de artículo: verificar con el proveedor.';
+    }
+    return frase;
+  };
+  const fila=(p,anomalia=false)=>`<tr><td>${p.fisico?etiqueta(p):''}</td><td class="num">${p.fisico||''}</td><td>${e(p.descripcion)}</td><td>${p.factura?etiqueta(p):''}</td><td class="num">${p.factura||''}</td><td class="estado">${anomalia?'NO COINCIDE':''}</td></tr>`+(anomalia?`<tr class="observacion"><td colspan="6"><b>Observación:</b> ${e(detalle(p))}</td></tr>`:'');
   const grupo=(titulo,filas)=>`<tr class="grupo"><th colspan="6">${e(titulo)}</th></tr>`+(filas||'<tr><td colspan="6">Sin registros</td></tr>');
-  const filasCoinciden=coincidencias.map(p=>fila(p,p,p.cantidad,p.cantidad,'COINCIDE')).join('');
-  const filasSobrantes=sobrantes.map(p=>fila(p,null,p.cantidad,0,'SOBRANTE')).join('');
-  const filasFaltantes=faltantes.map(p=>fila(null,p,0,p.cantidad,'FALTANTE')).join('');
+  const filasCoinciden=coincidencias.map(p=>fila(p)).join('');
+  const filasSobrantes=sobrantes.map(p=>fila(p,true)).join('');
+  const filasFaltantes=faltantes.map(p=>fila(p,true)).join('');
+  const unidadesCoincidentes=coincidencias.reduce((n,p)=>n+p.fisico,0)+[...sobrantes,...faltantes].reduce((n,p)=>n+Math.min(p.fisico,p.factura),0);
   const html=`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Comparación factura ${e(r.recepcion.remito)}</title><style>
-    body{font:12px Arial,sans-serif;color:#17212b;margin:20px}h1{font-size:21px}h2{font-size:15px}table{border-collapse:collapse;width:100%;margin-top:15px}td,th{border:1px solid #bbb;padding:6px;text-align:left}thead th{background:#ddd}.num{text-align:right;width:65px}.estado{font-weight:bold;width:85px}.grupo th{background:#eee;text-align:left;padding:9px}.meta{line-height:1.8}.nota{margin-top:20px;font-size:11px}@media print{body{margin:10mm}thead{display:table-header-group}tr{break-inside:avoid}}</style></head><body>
-    <h1>POS DEPO — Comparación con factura</h1><div class="meta"><b>Proveedor:</b> ${e(r.recepcion.proveedor)} · <b>Remito:</b> ${e(r.recepcion.remito)}<br><b>Modalidad:</b> ${modoComparacionFactura==='caja'?'POR CAJA':'TOTAL DEL REMITO'} · <b>Fecha de informe:</b> ${e(new Date().toLocaleString('es-AR'))}</div>
+    body{font:12px Arial,sans-serif;color:#17212b;margin:20px}h1{font-size:21px}h2{font-size:15px}table{border-collapse:collapse;width:100%;margin-top:15px}td,th{border:1px solid #bbb;padding:6px;text-align:left}thead th{background:#ddd}.num{text-align:right;width:65px}.estado{font-weight:bold;width:85px}.grupo th{background:#eee;text-align:left;padding:9px}.observacion td{background:#fff7e8;font-size:11px;line-height:1.5}.meta{line-height:1.8}.nota{margin-top:20px;font-size:11px}@media print{body{margin:10mm}thead{display:table-header-group}tr{break-inside:avoid}}</style></head><body>
+    <h1>POS DEPO — Comparación con factura</h1><div class="meta"><b>Proveedor:</b> ${e(r.recepcion.proveedor)} · <b>Remito:</b> ${e(r.recepcion.remito)}<br><b>Modalidad:</b> ${porCaja?'POR CAJA':'TOTAL DEL REMITO'} · <b>Fecha de informe:</b> ${e(new Date().toLocaleString('es-AR'))}</div>
     <h2>Conteo físico vs. factura del proveedor</h2><table><thead><tr><th colspan="3">CONTEO FÍSICO (IZQUIERDA)</th><th colspan="2">FACTURA DEL PROVEEDOR (DERECHA)</th><th>RESULTADO</th></tr><tr><th>SKU / Caja</th><th>Cant.</th><th>Descripción</th><th>SKU / Caja</th><th>Cant.</th><th>Estado</th></tr></thead><tbody>
-    ${grupo('COINCIDENCIAS',filasCoinciden)}${grupo('SOBRANTES — MERCADERÍA FÍSICA NO FACTURADA',filasSobrantes)}${grupo('FALTANTES — MERCADERÍA FACTURADA NO ENCONTRADA',filasFaltantes)}</tbody></table>
-    <p class="nota">Coincidencias: ${coincidencias.reduce((n,p)=>n+p.cantidad,0)} unidades · Sobrantes: ${sobrantes.reduce((n,p)=>n+p.cantidad,0)} · Faltantes: ${faltantes.reduce((n,p)=>n+p.cantidad,0)}. Las diferencias parciales se separan en unidades coincidentes y unidades de diferencia. Comparación generada a partir del conteo guardado y la factura ingresada manualmente.</p></body></html>`;
+    ${grupo('PRODUCTOS SIN DIFERENCIAS',filasCoinciden)}${grupo('SOBRANTES — MERCADERÍA FÍSICA SUPERIOR A LO FACTURADO',filasSobrantes)}${grupo('FALTANTES — MERCADERÍA FÍSICA INFERIOR A LO FACTURADO',filasFaltantes)}</tbody></table>
+    <p class="nota">Unidades coincidentes: ${unidadesCoincidentes} · Unidades sobrantes: ${sobrantes.reduce((n,p)=>n+p.diferencia,0)} · Unidades faltantes: ${faltantes.reduce((n,p)=>n-p.diferencia,0)}. Las observaciones vinculan anomalías de una misma caja como ayuda para revisar; no confirman sustituciones realizadas por el proveedor.</p></body></html>`;
   const ventana=window.open('','_blank');
   if(!ventana){alert('Chrome bloqueó la ventana de impresión. Permití ventanas emergentes.');return;}
   ventana.document.open();ventana.document.write(html);ventana.document.close();ventana.focus();
