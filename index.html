@@ -2741,17 +2741,33 @@ function imprimirComparacionFactura(){
     }
     return frase;
   };
+  // Mostrar todos los artículos en su caja, incluso los que presentan diferencias.
   const fila=(p,anomalia=false)=>`<tr><td>${p.fisico?etiqueta(p):''}</td><td class="num">${p.fisico||''}</td><td>${e(p.descripcion)}</td><td>${p.factura?etiqueta(p):''}</td><td class="num">${p.factura||''}</td><td class="estado">${anomalia?'NO COINCIDE':''}</td></tr>`+(anomalia?`<tr class="observacion"><td colspan="6"><b>Observación:</b> ${e(detalle(p))}</td></tr>`:'');
   const grupo=(titulo,filas)=>`<tr class="grupo"><th colspan="6">${e(titulo)}</th></tr>`+(filas||'<tr><td colspan="6">Sin registros</td></tr>');
-  const filasCoinciden=coincidencias.map(p=>fila(p)).join('');
-  const filasSobrantes=sobrantes.map(p=>fila(p,true)).join('');
-  const filasFaltantes=faltantes.map(p=>fila(p,true)).join('');
+  const todos=[...coincidencias,...sobrantes,...faltantes];
+  const ordenar=(x,y)=>(Number(x.caja||0)-Number(y.caja||0))||x.sku.localeCompare(y.sku);
+  todos.sort(ordenar);
+  let filasDetalle='';
+  if(porCaja){
+    const cajas=[...new Set(todos.map(p=>String(p.caja)))].sort((a,b)=>Number(a)-Number(b));
+    for(const caja of cajas){
+      filasDetalle+=grupo('CAJA '+caja,todos.filter(p=>String(p.caja)===caja).map(p=>fila(p,p.diferencia!==0)).join(''));
+    }
+  }else{
+    filasDetalle=grupo('TOTAL DEL REMITO',todos.map(p=>fila(p,p.diferencia!==0)).join(''));
+  }
+  // En el resumen, mostrar SOLO las unidades de diferencia, no el total físico/facturado.
+  const filaDiferencia=(p,tipo)=>`<tr><td>${e(p.sku)}${porCaja?' · Caja '+e(p.caja):''}</td><td class="num">${Math.abs(p.diferencia)}</td><td>${e(p.descripcion)}</td><td colspan="2">${tipo==='SOBRANTE'?'Unidades recibidas de más':'Unidades recibidas de menos'}</td><td class="estado">${tipo}</td></tr>`;
+  const filasSobrantes=sobrantes.map(p=>filaDiferencia(p,'SOBRANTE')).join('');
+  const filasFaltantes=faltantes.map(p=>filaDiferencia(p,'FALTANTE')).join('');
   const unidadesCoincidentes=coincidencias.reduce((n,p)=>n+p.fisico,0)+[...sobrantes,...faltantes].reduce((n,p)=>n+Math.min(p.fisico,p.factura),0);
   const html=`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Comparación factura ${e(r.recepcion.remito)}</title><style>
     body{font:12px Arial,sans-serif;color:#17212b;margin:20px}h1{font-size:21px}h2{font-size:15px}table{border-collapse:collapse;width:100%;margin-top:15px}td,th{border:1px solid #bbb;padding:6px;text-align:left}thead th{background:#ddd}.num{text-align:right;width:65px}.estado{font-weight:bold;width:85px}.grupo th{background:#eee;text-align:left;padding:9px}.observacion td{background:#fff7e8;font-size:11px;line-height:1.5}.meta{line-height:1.8}.nota{margin-top:20px;font-size:11px}@media print{body{margin:10mm}thead{display:table-header-group}tr{break-inside:avoid}}</style></head><body>
     <h1>POS DEPO — Comparación con factura</h1><div class="meta"><b>Proveedor:</b> ${e(r.recepcion.proveedor)} · <b>Remito:</b> ${e(r.recepcion.remito)}<br><b>Modalidad:</b> ${porCaja?'POR CAJA':'TOTAL DEL REMITO'} · <b>Fecha de informe:</b> ${e(new Date().toLocaleString('es-AR'))}</div>
-    <h2>Conteo físico vs. factura del proveedor</h2><table><thead><tr><th colspan="3">CONTEO FÍSICO (IZQUIERDA)</th><th colspan="2">FACTURA DEL PROVEEDOR (DERECHA)</th><th>RESULTADO</th></tr><tr><th>SKU / Caja</th><th>Cant.</th><th>Descripción</th><th>SKU / Caja</th><th>Cant.</th><th>Estado</th></tr></thead><tbody>
-    ${grupo('PRODUCTOS SIN DIFERENCIAS',filasCoinciden)}${grupo('SOBRANTES — MERCADERÍA FÍSICA SUPERIOR A LO FACTURADO',filasSobrantes)}${grupo('FALTANTES — MERCADERÍA FÍSICA INFERIOR A LO FACTURADO',filasFaltantes)}</tbody></table>
+    <h2>Conteo físico vs. factura del proveedor — detalle ${porCaja?'por caja':'total'}</h2><table><thead><tr><th colspan="3">CONTEO FÍSICO (IZQUIERDA)</th><th colspan="2">FACTURA DEL PROVEEDOR (DERECHA)</th><th>RESULTADO</th></tr><tr><th>SKU / Caja</th><th>Cant.</th><th>Descripción</th><th>SKU / Caja</th><th>Cant.</th><th>Estado</th></tr></thead><tbody>
+    ${filasDetalle}</tbody></table>
+    <h2>Resumen de diferencias — solo unidades sobrantes o faltantes</h2><table><thead><tr><th>SKU / Caja</th><th>Diferencia</th><th>Descripción</th><th colspan="2">Detalle</th><th>Resultado</th></tr></thead><tbody>
+    ${grupo('SOBRANTES',filasSobrantes)}${grupo('FALTANTES',filasFaltantes)}</tbody></table>
     <p class="nota">Unidades coincidentes: ${unidadesCoincidentes} · Unidades sobrantes: ${sobrantes.reduce((n,p)=>n+p.diferencia,0)} · Unidades faltantes: ${faltantes.reduce((n,p)=>n-p.diferencia,0)}. Las observaciones vinculan anomalías de una misma caja como ayuda para revisar; no confirman sustituciones realizadas por el proveedor.</p></body></html>`;
   const ventana=window.open('','_blank');
   if(!ventana){alert('Chrome bloqueó la ventana de impresión. Permití ventanas emergentes.');return;}
