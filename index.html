@@ -375,6 +375,7 @@ input[readonly] { background: #e9edf0; }
 
     <video id="videoIngreso" autoplay playsinline></video>
     <div id="memoriaIngreso" class="memoria-lecturas" aria-live="polite"></div>
+    <button id="repetirIngreso" class="secundario oculto" type="button" onclick="repetirUltimoIngreso()">↻ REPETIR ÚLTIMO PRODUCTO</button>
     <p id="estadoIngreso"></p>
 
     <button class="secundario" onclick="verTotalRecepcion()">📋 VER TOTAL DE MERCADERÍA DEL REMITO</button>
@@ -401,7 +402,6 @@ input[readonly] { background: #e9edf0; }
     <div id="detalleHistorialRemito" class="panel-consulta-recepcion oculto">
       <div id="cabeceraDetalleHistorial"></div>
       <button class="secundario" onclick="imprimirInformeRemito()">🖨️ IMPRIMIR INFORME</button>
-      <button id="botonSyncIngresos" class="secundario" onclick="registrarHistorialEnIngresos()">📄 REGISTRAR EN INGRESOS (REMITOS ANTERIORES)</button>
       <div class="historial-tabs">
         <button id="tabHistorialCajas" class="cantidad-activa" onclick="cambiarPestanaHistorial('cajas')">📦 POR CAJAS</button>
         <button id="tabHistorialTotales" onclick="cambiarPestanaHistorial('totales')">📋 TOTALES</button>
@@ -496,6 +496,7 @@ input[readonly] { background: #e9edf0; }
     <button id="botonCerrarCamaraExterna" class="secundario oculto" onclick="cerrarCamaraExterna()">CERRAR CÁMARA</button>
     <video id="videoExterno" autoplay playsinline></video>
     <div id="memoriaExterno" class="memoria-lecturas" aria-live="polite"></div>
+    <button id="repetirExterno" class="secundario oculto" type="button" onclick="repetirUltimoExterno()">↻ REPETIR ÚLTIMO PRODUCTO</button>
     <p id="estadoExternoCarga" class="nota"></p>
     <h3 id="contadorExternoCarga">0 productos diferentes</h3>
     <div id="listaExternoCarga"></div>
@@ -1296,6 +1297,7 @@ function cerrarAgregarExterno() {
 function cambiarModoExternoCarga(modo) {
   if (guardandoExterno || pendienteExternoDatos || procesandoExterno) return;
   modoCargaExterna = modo === 'SIMPLE' ? 'SIMPLE' : 'RAPIDO';
+  document.getElementById('repetirExterno').classList.toggle('oculto',modoCargaExterna !== 'RAPIDO' || !historialExterno.length);
   document.getElementById('modoExternoRapido').classList.toggle('cantidad-activa',modoCargaExterna==='RAPIDO');
   document.getElementById('modoExternoSimple').classList.toggle('cantidad-activa',modoCargaExterna==='SIMPLE');
   document.getElementById('panelExternoRapido').classList.toggle('oculto',modoCargaExterna!=='RAPIDO');
@@ -1415,7 +1417,19 @@ async function agregarManualExterno() {
   } catch(e) { estadoCargaExterna('Error al consultar: '+e.message); errorLectura('externo','productoExternoCarga',e.message); }
   finally { procesandoExterno=false; }
 }
+function repetirUltimoExterno() {
+  if (modoCargaExterna !== 'RAPIDO' || procesandoExterno || pendienteExternoDatos || guardandoExterno) return;
+  const ultimo = historialExterno[historialExterno.length-1];
+  if (!ultimo) { estadoCargaExterna('Todavía no hay productos para repetir.'); return; }
+  const producto = listaExterna.get(ultimo.clave);
+  if (!producto) { estadoCargaExterna('No se encontró el último producto.'); return; }
+  // Aplica la cantidad elegida AHORA, igual que una lectura nueva.
+  if (acumularExterno({...producto})) {
+    // El escáner físico no se necesita para repetir el artículo.
+  }
+}
 function renderizarCargaExterna() {
+  document.getElementById("repetirExterno").classList.toggle("oculto", modoCargaExterna !== "RAPIDO" || !historialExterno.length);
   const cont = document.getElementById('listaExternoCarga'); cont.replaceChildren();
   document.getElementById('contadorExternoCarga').textContent = listaExterna.size+' productos diferentes';
   for (const p of listaExterna.values()) {
@@ -1890,6 +1904,7 @@ function seleccionarSugerencia(producto) {
 function cambiarModoIngreso(modo) {
   if (confirmandoIngreso || operacionPendienteDatos || procesandoIngreso) return;
   modoIngreso = modo === 'SIMPLE' ? 'SIMPLE' : 'RAPIDO';
+  document.getElementById('repetirIngreso').classList.toggle('oculto',modoIngreso !== 'RAPIDO' || !historialIngreso.length);
   document.getElementById('modoIngresoRapido').classList.toggle('cantidad-activa',modoIngreso==='RAPIDO');
   document.getElementById('modoIngresoSimple').classList.toggle('cantidad-activa',modoIngreso==='SIMPLE');
   document.getElementById('panelIngresoRapido').classList.toggle('oculto',modoIngreso!=='RAPIDO');
@@ -2203,7 +2218,21 @@ function acumularIngreso(clave, producto, cantidad) {
   return true;
 }
 
+function repetirUltimoIngreso() {
+  if (modoIngreso !== 'RAPIDO' || procesandoIngreso || confirmandoIngreso || operacionPendienteDatos || guardandoCaja || operacionCajaPendiente) return;
+  const ultimo = historialIngreso[historialIngreso.length-1];
+  if (!ultimo) { mostrarEstadoIngreso('Todavía no hay productos para repetir.'); return; }
+  const producto = listaMercaderia.get(ultimo.clave);
+  if (!producto) { mostrarEstadoIngreso('No se encontró el último producto.'); return; }
+  const cantidad = obtenerCantidadIngreso();
+  if (!cantidad) { mostrarEstadoIngreso('Elegí una cantidad válida antes de repetir.'); return; }
+  if (acumularIngreso(ultimo.clave, producto, cantidad)) {
+    mostrarEstadoIngreso(producto.sku + ': +' + cantidad + ' (repetido)');
+    memoriaLectura('ingreso',producto.sku,'+'+cantidad);
+  }
+}
 function renderizarIngreso() {
+  document.getElementById("repetirIngreso").classList.toggle("oculto", modoIngreso !== "RAPIDO" || !historialIngreso.length);
   const lista = document.getElementById("listaIngreso");
   lista.replaceChildren();
 
@@ -2461,7 +2490,6 @@ async function verDetalleHistorial(remitoId){
   try{
     const r=await consultarHistorialRecepciones('detalle',remitoId);
     detalleHistorialActual=r;
-    document.getElementById('botonSyncIngresos').classList.toggle('oculto',r.recepcion.estado!=='FINALIZADO');
     cab.replaceChildren();
     lineaRecepcion(cab,r.recepcion.remito+' · '+r.recepcion.proveedor,r.recepcion.fecha+' | '+r.recepcion.estado);
     lineaRecepcion(cab,'TOTAL: '+r.articulosDiferentes+' SKU · '+r.recepcion.unidades+' unidades · '+r.recepcion.cajas+' cajas',r.recepcion.control==='DEFINIDO'?'Bultos declarados: '+r.recepcion.declarados:'Bultos indefinidos');
@@ -2487,8 +2515,8 @@ function imprimirInformeRemito(){
   const r=detalleHistorialActual;
   if(!r){alert('Primero seleccioná un remito.');return;}
   const e=escaparInforme;
-  const filas=(productos)=>productos.map(p=>`<tr><td>${e(p.sku)}</td><td>${e(p.descripcion)}</td><td class="num">${e(p.cantidad)}</td></tr>`).join('');
-  const tabla=(productos)=>`<table><thead><tr><th>SKU</th><th>Descripción</th><th class="num">Cantidad</th></tr></thead><tbody>${filas(productos)}</tbody></table>`;
+  const filas=(productos)=>productos.map(p=>`<tr><td>${e(p.sku)}</td><td class="num">${e(p.cantidad)}</td><td>${e(p.descripcion)}</td></tr>`).join('');
+  const tabla=(productos)=>`<table><thead><tr><th>SKU</th><th class="num">Cantidad</th><th>Descripción</th></tr></thead><tbody>${filas(productos)}</tbody></table>`;
   const cuerpo=`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Informe remito ${e(r.recepcion.remito)}</title>
   <style>body{font:13px Arial,sans-serif;color:#17212b;margin:25px}h1{font-size:22px}h2{font-size:17px;margin-top:25px;border-bottom:2px solid #222;padding-bottom:5px}h3{font-size:14px;margin:16px 0 6px}.meta{line-height:1.8}.resumen{padding:10px;background:#eee;margin:12px 0}table{width:100%;border-collapse:collapse;margin:8px 0 15px}th,td{border-bottom:1px solid #bbb;text-align:left;padding:6px}th{background:#eee}.num{text-align:right}.caja{break-inside:avoid;page-break-inside:avoid}footer{margin-top:22px;font-size:11px;color:#666}@media print{body{margin:12mm}.resumen,th{print-color-adjust:exact}}</style></head><body>
   <h1>POS DEPO — Informe de recepción</h1><div class="meta"><b>Proveedor:</b> ${e(r.recepcion.proveedor)}<br><b>Remito:</b> ${e(r.recepcion.remito)}<br><b>Fecha:</b> ${e(r.recepcion.fecha)}<br><b>Estado:</b> ${e(r.recepcion.estado)}</div>
@@ -2500,15 +2528,6 @@ function imprimirInformeRemito(){
   if(!ventana){alert('Chrome bloqueó la ventana de impresión. Permití ventanas emergentes para POS DEPO.');return;}
   ventana.document.open();ventana.document.write(cuerpo);ventana.document.close();ventana.focus();
   ventana.addEventListener('load',()=>ventana.print(),{once:true});
-}
-async function registrarHistorialEnIngresos(){
-  const r=detalleHistorialActual;
-  if(!r||r.recepcion.estado!=='FINALIZADO')return;
-  if(!confirm('¿Registrar los totales de este remito en INGRESOS? No se duplicarán los productos ya registrados por esta sincronización.'))return;
-  try{
-    const resp=await consultarHistorialRecepciones('sincronizar-ingresos',r.recepcion.remitoId);
-    alert('INGRESOS actualizado. Filas nuevas: '+resp.filasNuevas+'. Filas ya registradas: '+resp.filasExistentes+'.');
-  }catch(error){alert('No se pudo actualizar INGRESOS: '+error.message)}
 }
 function alternarConfigRecepcion(){
   document.getElementById("configRecepcion").classList.toggle("oculto");
