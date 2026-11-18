@@ -462,7 +462,17 @@ input[readonly] { background: #e9edf0; }
     <p class="nota">Los informes corresponden únicamente al depósito seleccionado.</p>
     <button onclick="imprimirStockExternoTotal()">1 · IMPRIMIR STOCK TOTAL</button>
     <button onclick="imprimirStockExternoPorCaja()">2 · IMPRIMIR STOCK POR CAJA</button>
-    <button onclick="imprimirHistorialExterno()">3 · HISTORIAL DE MOVIMIENTOS</button>
+    <div style="margin-top:14px;padding:12px;border:1px solid #cbd1d5;border-radius:9px">
+      <label for="filtroMovimientosExternos">Historial de movimientos · Mostrar</label>
+      <select id="filtroMovimientosExternos" style="width:100%;padding:12px;font-size:16px;margin:8px 0">
+        <option value="TODOS">TODOS LOS MOVIMIENTOS</option>
+        <option value="ENTREGA">SOLO ENTREGAS</option>
+        <option value="DEVOLUCION">SOLO DEVOLUCIONES</option>
+        <option value="RECUENTO">SOLO RECUENTOS</option>
+      </select>
+      <button onclick="imprimirHistorialExterno()">3 · IMPRIMIR HISTORIAL DE MOVIMIENTOS</button>
+      <p class="nota">Se imprimen primero los movimientos más recientes, según el orden de registro.</p>
+    </div>
     <p id="estadoInformeExterno" class="nota" aria-live="polite"></p>
   </div>
 </section>
@@ -687,11 +697,21 @@ async function imprimirStockExternoPorCaja(){
 }
 async function imprimirHistorialExterno(){
   try{depositoSeleccionadoParaInforme();}catch(err){alert(err.message);return;}
+  const filtro=document.getElementById('filtroMovimientosExternos')?.value||'TODOS';
   const ventanaInforme=abrirVentanaInformeExterno();if(!ventanaInforme)return;
   const estado=document.getElementById('estadoInformeExterno');estado.textContent='Consultando historial de movimientos...';
-  try{const d=await solicitarExterno('/historial-movimientos-externos',{depositoId:depositoSeleccionadoParaInforme()}),e=escaparInformeExterno;
-    const filas=(d.movimientos||[]).map(m=>`<tr><td>${e(m.fecha)}</td><td>${e(m.tipo)}</td><td>${e(m.cajon)} ${e(m.nombreCajon)}</td><td>${e(m.sku)}</td><td>${e(m.descripcion)}</td><td class="num">${e(m.cantidad)}</td><td class="num">${e(m.anterior)}</td><td class="num">${e(m.nuevo)}</td><td>${e(m.usuario)}</td></tr>`).join('');
-    imprimirDocumentoExterno('POS DEPO — Historial de movimientos',`<div class="meta"><b>Camioneta:</b> ${e(d.deposito.nombre)} · <b>Movimientos:</b> ${(d.movimientos||[]).length}</div><table><thead><tr><th>Fecha</th><th>Movimiento</th><th>Cajón</th><th>SKU</th><th>Descripción</th><th class="num">Cambio</th><th class="num">Antes</th><th class="num">Después</th><th>Usuario</th></tr></thead><tbody>${filas||'<tr><td colspan="9">Sin movimientos registrados</td></tr>'}</tbody></table>`,ventanaInforme);estado.textContent='Informe listo.';
+  try{
+    const d=await solicitarExterno('/historial-movimientos-externos',{depositoId:depositoSeleccionadoParaInforme()}),e=escaparInformeExterno;
+    // El backend lee MOVIMIENTOS_EXTERNOS en el orden de las filas: la última fila es la más reciente.
+    // No ordenar por texto de fecha, ya que Google Sheets puede devolver fechas en distintos formatos.
+    const movimientos=[...(d.movimientos||[])].reverse().filter(m=>{
+      const tipo=String(m.tipo||'').trim().toUpperCase();
+      return filtro==='TODOS'||tipo===filtro;
+    });
+    const etiquetas={TODOS:'Todos los movimientos',ENTREGA:'Solo entregas',DEVOLUCION:'Solo devoluciones',RECUENTO:'Solo recuentos'};
+    const filas=movimientos.map(m=>`<tr><td>${e(m.fecha)}</td><td>${e(m.tipo)}</td><td>${e(m.cajon)} ${e(m.nombreCajon)}</td><td>${e(m.sku)}</td><td>${e(m.descripcion)}</td><td class="num">${e(m.cantidad)}</td><td class="num">${e(m.anterior)}</td><td class="num">${e(m.nuevo)}</td><td>${e(m.usuario)}</td></tr>`).join('');
+    imprimirDocumentoExterno('POS DEPO — Historial de movimientos',`<div class="meta"><b>Depósito:</b> ${e(d.deposito.nombre)}<br><b>Filtro:</b> ${e(etiquetas[filtro]||filtro)}<br><b>Movimientos mostrados:</b> ${movimientos.length} · <b>Orden:</b> más recientes primero</div><table><thead><tr><th>Fecha</th><th>Movimiento</th><th>Cajón</th><th>SKU</th><th>Descripción</th><th class="num">Cambio</th><th class="num">Antes</th><th class="num">Después</th><th>Usuario</th></tr></thead><tbody>${filas||'<tr><td colspan="9">Sin movimientos para este filtro</td></tr>'}</tbody></table>`,ventanaInforme);
+    estado.textContent='Informe listo: '+movimientos.length+' movimientos ('+(etiquetas[filtro]||filtro)+').';
   }catch(err){estado.textContent='Error: '+err.message; if(ventanaInforme&&!ventanaInforme.closed){ventanaInforme.document.body.textContent='No se pudo preparar el informe: '+err.message;}}
 }
 
