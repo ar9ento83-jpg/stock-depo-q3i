@@ -2757,7 +2757,7 @@ function imprimirComparacionFactura(){
     filasDetalle=grupo('TOTAL DEL REMITO',todos.map(p=>fila(p,p.diferencia!==0)).join(''));
   }
   // En el resumen, mostrar SOLO las unidades de diferencia, no el total físico/facturado.
-  const filaDiferencia=(p,tipo)=>`<tr><td>${e(p.sku)}${porCaja?' · Caja '+e(p.caja):''}</td><td class="num">${Math.abs(p.diferencia)}</td><td>${e(p.descripcion)}</td><td colspan="2">${tipo==='SOBRANTE'?'Unidades recibidas de más':'Unidades recibidas de menos'}</td><td class="estado">${tipo}</td></tr>`;
+  const filaDiferencia=(p,tipo)=>`<tr><td>${e(p.sku)}${porCaja?' · Caja '+e(p.caja):''}</td><td class="num">${Math.abs(p.diferencia)}</td><td>${e(p.descripcion)}</td><td colspan="2">${tipo==='SOBRANTE'?'Unidades recibidas de más':'Unidades recibidas de menos'}</td><td class="estado">${tipo}</td></tr><tr class="observacion"><td colspan="6"><b>Observación:</b> ${e(detalle(p))}</td></tr>`;
   const filasSobrantes=sobrantes.map(p=>filaDiferencia(p,'SOBRANTE')).join('');
   const filasFaltantes=faltantes.map(p=>filaDiferencia(p,'FALTANTE')).join('');
   const unidadesCoincidentes=coincidencias.reduce((n,p)=>n+p.fisico,0)+[...sobrantes,...faltantes].reduce((n,p)=>n+Math.min(p.fisico,p.factura),0);
