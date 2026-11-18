@@ -228,21 +228,21 @@ input[readonly] { background: #e9edf0; }
       <span class="icono">🔎</span>
       Consultar stock
     </button>
-    <button onclick="abrirModulo('ingreso')">
+    <button data-requiere-operador onclick="abrirModulo('ingreso')">
       <span class="icono">📦</span>
       Ingreso de mercadería
     </button>
-    <button class="pendiente" onclick="abrirModulo('pedidos')">
+    <button class="pendiente" data-requiere-operador onclick="abrirModulo('pedidos')">
       <span class="icono">📋</span>
       Armado de pedidos
       <small>Próximamente</small>
     </button>
-    <button onclick="abrirModulo('historial')">
+    <button data-requiere-operador onclick="abrirModulo('historial')">
       <span class="icono">📚</span>
       Historial de remitos
       <small>Por cajas y totales</small>
     </button>
-    <button onclick="abrirModulo('exterior')">
+    <button data-requiere-operador onclick="abrirModulo('exterior')">
       <span class="icono">🚚</span>
       Stock externo
       <small>Depósitos y cajones</small>
@@ -857,6 +857,9 @@ async function recibirCredencial(response) {
     if (respuesta.ok && datos.ok && datos.autorizado) {
       credencialGoogle = response.credential;
       rolUsuario = datos.rol;
+      document.querySelectorAll("[data-requiere-operador]").forEach(boton => {
+        boton.classList.toggle("oculto", rolUsuario === "JUNIOR");
+      });
 
       document.getElementById("usuarioActual").textContent =
         "Usuario autorizado: " + rolUsuario;
@@ -924,6 +927,10 @@ function mostrarPantalla(id) {
 }
 
 function abrirModulo(modulo) {
+  if (rolUsuario === "JUNIOR" && modulo !== "stock") {
+    alert("Tu usuario JUNIOR solo puede consultar stock.");
+    return;
+  }
   if (!credencialGoogle) {
     alert("Primero iniciá sesión.");
     return;
