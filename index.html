@@ -2742,7 +2742,7 @@ function imprimirComparacionFactura(){
     return frase;
   };
   // Mostrar todos los artículos en su caja, incluso los que presentan diferencias.
-  const fila=(p,anomalia=false)=>`<tr><td>${p.fisico?etiqueta(p):''}</td><td class="num">${p.fisico||''}</td><td>${e(p.descripcion)}</td><td>${p.factura?etiqueta(p):''}</td><td class="num">${p.factura||''}</td><td class="estado">${anomalia?'NO COINCIDE':''}</td></tr>`+(anomalia?`<tr class="observacion"><td colspan="6"><b>Observación:</b> ${e(detalle(p))}</td></tr>`:'');
+  const fila=(p,anomalia=false)=>`<tr><td>${p.fisico?etiqueta(p):''}</td><td class="num">${p.fisico||''}</td><td>${e(p.descripcion)}</td><td>${p.factura?etiqueta(p):''}</td><td class="num">${p.factura||''}</td><td class="estado">${anomalia?'NO COINCIDE':''}</td></tr>`;
   const grupo=(titulo,filas)=>`<tr class="grupo"><th colspan="6">${e(titulo)}</th></tr>`+(filas||'<tr><td colspan="6">Sin registros</td></tr>');
   const todos=[...coincidencias,...sobrantes,...faltantes];
   const ordenar=(x,y)=>(Number(x.caja||0)-Number(y.caja||0))||x.sku.localeCompare(y.sku);
