@@ -5,7 +5,61 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>POS DEPO</title>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://accounts.google.com/gsi/client" async defer>
+// INFORMES DE STOCK EXTERNO — CONSULTAS SIN MODIFICAR EXISTENCIAS
+function escaparInformeExterno(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function imprimirDocumentoExterno(titulo,contenido){
+  const w=window.open('','_blank');
+  if(!w){alert('Permití las ventanas emergentes para imprimir el informe.');return;}
+  const e=escaparInformeExterno;
+  w.document.open();w.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${e(titulo)}</title>
+  <style>body{font:12px Arial,sans-serif;color:#18222b;margin:22px}h1{font-size:21px}h2{font-size:16px;margin-top:22px}h3{font-size:14px;margin-top:16px}table{border-collapse:collapse;width:100%;margin:10px 0 18px}th,td{border:1px solid #cbd1d5;padding:5px 7px;text-align:left}th{background:#edf0f2}.num{text-align:right;white-space:nowrap}.meta{margin-bottom:14px}.caja{break-inside:avoid;page-break-inside:avoid}.total{font-weight:bold;background:#f1f4f6}@media print{body{margin:12mm}th{print-color-adjust:exact}}</style>
+  </head><body><h1>${e(titulo)}</h1>${contenido}<p style="font-size:10px;margin-top:25px">POS DEPO · Informe de consulta generado el ${e(new Date().toLocaleString('es-AR'))}</p></body></html>`);
+  w.document.close();w.focus();w.addEventListener('load',()=>w.print(),{once:true});
+}
+async function datosInformeExterno(){
+  if(!depositoExternoActual)throw Error('Seleccioná una camioneta primero.');
+  const deposito=depositosExternos.find(d=>d.id===depositoExternoActual);
+  const datos=await solicitarExterno('/cajones-externos',{depositoId:depositoExternoActual});
+  const mapa=new Map((datos.cajones||[]).map(c=>[Number(c.numero),c]));
+  const total=Number(deposito?.cajonesConfigurados)||0;
+  for(let n=1;n<=total;n++)if(!mapa.has(n))mapa.set(n,{numero:n,nombre:'CAJON '+String(n).padStart(2,'0'),productos:[],unidades:0,skuDiferentes:0});
+  return {deposito:deposito||{nombre:depositoExternoActual},cajones:[...mapa.values()].sort((a,b)=>Number(a.numero)-Number(b.numero)),sinCajon:datos.sinCajon||[]};
+}
+function tablaStockExterno(productos){
+  const e=escaparInformeExterno;
+  return `<table><thead><tr><th>SKU</th><th class="num">Cantidad</th><th>Descripción</th></tr></thead><tbody>${productos.map(p=>`<tr><td>${e(p.sku)}</td><td class="num">${e(p.cantidad)}</td><td>${e(p.descripcion||'')}</td></tr>`).join('')||'<tr><td colspan="3">Sin mercadería</td></tr>'}</tbody></table>`;
+}
+function agruparStockExterno(datos){
+  const mapa=new Map();
+  for(const c of datos.cajones){for(const p of c.productos||[]){const k=String(p.sku||'').trim().toUpperCase();if(!k)continue;const v=mapa.get(k)||{sku:p.sku,cantidad:0,descripcion:p.descripcion||''};v.cantidad+=Number(p.cantidad)||0;if(!v.descripcion)v.descripcion=p.descripcion||'';mapa.set(k,v);}}
+  for(const p of datos.sinCajon){const k=String(p.sku||'').trim().toUpperCase();if(!k)continue;const v=mapa.get(k)||{sku:p.sku,cantidad:0,descripcion:p.descripcion||''};v.cantidad+=Number(p.cantidad)||0;mapa.set(k,v);}
+  return [...mapa.values()].filter(p=>p.cantidad>0).sort((a,b)=>a.sku.localeCompare(b.sku));
+}
+async function imprimirStockExternoTotal(){
+  const estado=document.getElementById('estadoInformeExterno');estado.textContent='Preparando stock total...';
+  try{const d=await datosInformeExterno(),p=agruparStockExterno(d),u=p.reduce((a,x)=>a+x.cantidad,0);
+    imprimirDocumentoExterno('POS DEPO — Stock total',`<div class="meta"><b>Camioneta:</b> ${escaparInformeExterno(d.deposito.nombre)}<br><b>Artículos:</b> ${p.length} SKU · <b>Unidades:</b> ${u}</div>${tablaStockExterno(p)}`);estado.textContent='Informe listo.';
+  }catch(err){estado.textContent='Error: '+err.message;}
+}
+async function imprimirStockExternoPorCaja(){
+  const estado=document.getElementById('estadoInformeExterno');estado.textContent='Preparando informe por caja...';
+  try{const d=await datosInformeExterno(),e=escaparInformeExterno;
+    const secciones=d.cajones.map(c=>{const p=(c.productos||[]).filter(x=>Number(x.cantidad)>0);const unidades=p.reduce((a,x)=>a+(Number(x.cantidad)||0),0);
+      return `<section class="caja"><h3>Caja ${e(c.numero)} · ${e(c.nombre||'')} — ${unidades} unidades${unidades?'':' · VACÍO'}</h3>${tablaStockExterno(p)}</section>`;}).join('');
+    const sin=d.sinCajon.length?`<section class="caja"><h3>Sin cajón asignado</h3>${tablaStockExterno(d.sinCajon)}</section>`:'';
+    imprimirDocumentoExterno('POS DEPO — Stock por caja',`<div class="meta"><b>Camioneta:</b> ${e(d.deposito.nombre)}</div>${secciones}${sin}`);estado.textContent='Informe listo.';
+  }catch(err){estado.textContent='Error: '+err.message;}
+}
+async function imprimirHistorialExterno(){
+  const estado=document.getElementById('estadoInformeExterno');estado.textContent='Consultando historial de movimientos...';
+  try{const d=await solicitarExterno('/historial-movimientos-externos',{depositoId:depositoExternoActual}),e=escaparInformeExterno;
+    const filas=(d.movimientos||[]).map(m=>`<tr><td>${e(m.fecha)}</td><td>${e(m.tipo)}</td><td>${e(m.cajon)} ${e(m.nombreCajon)}</td><td>${e(m.sku)}</td><td>${e(m.descripcion)}</td><td class="num">${e(m.cantidad)}</td><td class="num">${e(m.anterior)}</td><td class="num">${e(m.nuevo)}</td><td>${e(m.usuario)}</td></tr>`).join('');
+    imprimirDocumentoExterno('POS DEPO — Historial de movimientos',`<div class="meta"><b>Camioneta:</b> ${e(d.deposito.nombre)} · <b>Movimientos:</b> ${(d.movimientos||[]).length}</div><table><thead><tr><th>Fecha</th><th>Movimiento</th><th>Cajón</th><th>SKU</th><th>Descripción</th><th class="num">Cambio</th><th class="num">Antes</th><th class="num">Después</th><th>Usuario</th></tr></thead><tbody>${filas||'<tr><td colspan="9">Sin movimientos registrados</td></tr>'}</tbody></table>`);estado.textContent='Informe listo.';
+  }catch(err){estado.textContent='Error: '+err.message;}
+}
+
+</script>
 
 <style>
 * { box-sizing: border-box; }
@@ -447,6 +501,7 @@ input[readonly] { background: #e9edf0; }
     <p class="nota">Seleccioná un depósito para ver sus cajones.</p>
     <button id="botonConfigExterna" class="secundario oculto" onclick="abrirConfigExterna()">⚙️ CONFIGURACIÓN (ADMIN)</button>
     <div id="listaDepositosExternos">Cargando depósitos...</div>
+    <p class="nota">Los informes se habilitan al seleccionar una camioneta.</p>
   </div>
 </section>
 
@@ -457,6 +512,13 @@ input[readonly] { background: #e9edf0; }
     <div id="resumenDepositoExterno"></div>
     <button class="secundario" onclick="verDuplicadosExternos()">BUSCAR DUPLICADOS</button>
     <div id="resultadoDuplicadosExternos"></div>
+    <div class="panel" style="background:#f3f6f8;margin:12px 0;padding:12px">
+      <h4>🖨️ Informes de esta camioneta</h4>
+      <button onclick="imprimirStockExternoTotal()">1 · IMPRIMIR STOCK TOTAL</button>
+      <button onclick="imprimirStockExternoPorCaja()">2 · IMPRIMIR STOCK POR CAJA</button>
+      <button onclick="imprimirHistorialExterno()">3 · HISTORIAL DE MOVIMIENTOS</button>
+      <p id="estadoInformeExterno" class="nota"></p>
+    </div>
     <button class="secundario" onclick="alternarBusquedaExterna()">BUSCAR PRODUCTO</button>
     <div id="busquedaProductoExterno" class="oculto">
       <p class="nota">Buscá por SKU, código de barras o descripción. Solo se consulta esta camioneta.</p>
