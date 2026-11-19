@@ -3588,6 +3588,9 @@ function imprimirFacturaTicket() {
   ventana.document.open();
   ventana.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ticket factura ${txtFacturaTicket(valorFacturaTicket('numeroFacturaTicket'))}</title><style>@page{size:58mm auto;margin:2mm}*{box-sizing:border-box}body{font:11px monospace;width:54mm;max-width:54mm;margin:0;color:#000}.centro{text-align:center}.producto{border-top:1px dashed #777;padding:3px 0;break-inside:avoid}.descripcion{overflow-wrap:anywhere}.importe{text-align:right;font-weight:bold;font-size:12px}.totales{border-top:1px solid #000;margin-top:5px;padding-top:5px}.totales div{display:flex;justify-content:space-between}.total{font-weight:bold;font-size:13px}.imprimir{display:block;width:100%;font-size:16px;padding:10px;margin-bottom:15px}@media print{.imprimir{display:none}}</style></head><body><button class="imprimir" onclick="window.print()">IMPRIMIR</button><div class="centro"><b>RESUMEN DE FACTURA</b><div>${txtFacturaTicket(valorFacturaTicket('tipoFacturaTicket'))} ${txtFacturaTicket(valorFacturaTicket('numeroFacturaTicket'))}</div></div><p>CLI: ${txtFacturaTicket(valorFacturaTicket('clienteFacturaTicket'))}</p><div>CÓDIGO / CANTIDAD / DESCRIP.</div>${lineas}<div class="totales"><div><span>SUBTOTAL</span><span>$ ${txtFacturaTicket(valorFacturaTicket('subtotalFacturaTicket'))}</span></div><div><span>IVA</span><span>$ ${txtFacturaTicket(valorFacturaTicket('ivaFacturaTicket'))}</span></div><div class="total"><span>TOTAL</span><span>$ ${txtFacturaTicket(valorFacturaTicket('totalFacturaTicket'))}</span></div></div><p class="centro">RESUMEN INTERNO<br>NO VALIDO COMO FACTURA</p></body></html>`);
   ventana.document.close();
+  ventana.focus();
+  // Igual que los informes de remitos: lanzar la impresión al cargar el ticket.
+  ventana.addEventListener('load',()=>ventana.print(),{once:true});
 }
 
 </script>
