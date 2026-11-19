@@ -242,11 +242,45 @@ input[readonly] { background: #e9edf0; }
       Historial de remitos
       <small>Por cajas y totales</small>
     </button>
+    <button data-requiere-operador onclick="abrirModulo('facturaTicket')">
+      <span class="icono">🧾</span>
+      Ticket de factura
+      <small>PDF → resumen para impresora térmica</small>
+    </button>
     <button data-requiere-operador onclick="abrirModulo('exterior')">
       <span class="icono">🚚</span>
       Stock externo
       <small>Depósitos y cajones</small>
     </button>
+  </div>
+</section>
+
+
+<section id="pantallaFacturaTicket" class="oculto">
+  <button class="secundario" onclick="volverMenu()">← VOLVER AL MENÚ</button>
+  <div class="panel">
+    <h3>🧾 Resumen de factura</h3>
+    <p>Seleccioná un PDF de factura. Revisá los datos antes de imprimir; el resumen no reemplaza la factura fiscal.</p>
+    <input id="archivoFacturaTicket" type="file" accept="application/pdf,.pdf" onchange="leerFacturaTicket(this.files[0])">
+    <p id="estadoFacturaTicket" role="status">Esperando archivo PDF...</p>
+    <div id="edicionFacturaTicket" class="oculto">
+      <label>Tipo y número</label>
+      <input id="tipoFacturaTicket" placeholder="FACTURA A">
+      <input id="numeroFacturaTicket" placeholder="00001487">
+      <label>Cliente</label>
+      <input id="clienteFacturaTicket" placeholder="Cliente">
+      <label>Subtotal (sin IVA)</label>
+      <input id="subtotalFacturaTicket" placeholder="97.444,81">
+      <label>IVA</label>
+      <input id="ivaFacturaTicket" placeholder="20.463,40">
+      <label>Total</label>
+      <input id="totalFacturaTicket" placeholder="117.908,22">
+      <p><b>Productos detectados:</b> <span id="contadorFacturaTicket">0</span></p>
+      <div id="tablaFacturaTicket" style="overflow-x:auto"></div>
+      <button onclick="agregarFilaFacturaTicket()" class="secundario">+ AGREGAR PRODUCTO</button>
+      <button onclick="imprimirFacturaTicket()">🖨️ IMPRIMIR RESUMEN</button>
+      <small>La impresión abre el diálogo de Chrome. La impresora integrada del Q3i debe ser compatible con impresión desde el navegador.</small>
+    </div>
   </div>
 </section>
 
@@ -909,6 +943,7 @@ function mostrarPantalla(id) {
   [
     "pantallaMenu",
     "pantallaStock",
+    "pantallaFacturaTicket",
     "pantallaIngreso",
     "pantallaHistorialRemitos",
     "pantallaExterno",
@@ -941,6 +976,11 @@ function abrirModulo(modulo) {
   cerrarCamaraExterna();
   cerrarCamaraBusquedaExterna();
   ocultarSugerencias();
+
+  if (modulo === "facturaTicket") {
+    mostrarPantalla("pantallaFacturaTicket");
+    return;
+  }
 
   if (modulo === "stock") {
     mostrarPantalla("pantallaStock");
@@ -3457,6 +3497,99 @@ window.addEventListener("load", () => {
     }, 500);
   }
 });
+
+// RESUMEN TERMICO DE FACTURA - lectura local del PDF (sin subirlo al servidor)
+let filasFacturaTicket = [];
+function txtFacturaTicket(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function valorFacturaTicket(id) { return document.getElementById(id).value.trim(); }
+function abreviarFacturaTicket(s) {
+  return String(s||'').split(/(\s+)/).map(p => /^\s+$/.test(p) ? ' ' : p.length>3 ? p.slice(0,3) : p).join('').replace(/\s+/g,' ').trim();
+}
+function normalizarDineroTicket(s) { return String(s||'').replace(/[^\d,.\-]/g,'').trim(); }
+function agruparLineasTicket(items) {
+  const lineas=[];
+  for (const i of items) {
+    const t=String(i.str||'').trim(); if(!t) continue;
+    const x=i.transform[4], y=i.transform[5];
+    let l=lineas.find(l=>Math.abs(l.y-y)<2.8);
+    if(!l) {l={y,partes:[]};lineas.push(l);}
+    l.partes.push({x,t});
+  }
+  return lineas.sort((a,b)=>b.y-a.y).map(l=>({y:l.y,partes:l.partes.sort((a,b)=>a.x-b.x),texto:l.partes.map(p=>p.t).join(' ')}));
+}
+function textoColumnaTicket(linea,min,max) {return linea.partes.filter(p=>p.x>=min&&p.x<max).map(p=>p.t).join(' ').trim();}
+function extraerFacturaTicket(lineas) {
+  const texto=lineas.map(l=>l.texto).join('\n');
+  const cab=texto.match(/Comp\.?\s*Nro\.?\s*:?\s*(\d+)/i);
+  const cliente=texto.match(/Cliente\s*:\s*(.+?)(?:\s+CUIT\s*:|\s+Tel[eé]fono\s*:|$)/im);
+  const subt=texto.match(/(?:^|\n).*?Subtotal\s*:\s*\$?\s*([\d.,]+)/im);
+  const iva=texto.match(/(?:^|\n).*?IVA\s*:\s*\$?\s*([\d.,]+)/im);
+  const total=texto.match(/Importe\s+Total\s*:\s*\$?\s*([\d.,]+)/im);
+  document.getElementById('tipoFacturaTicket').value=/\bFACTURA\s*A\b/i.test(texto)?'FACTURA A':'FACTURA';
+  document.getElementById('numeroFacturaTicket').value=cab?.[1]||'';
+  document.getElementById('clienteFacturaTicket').value=(cliente?.[1]||'').replace(/\s+-\s+\d+$/,'').trim();
+  document.getElementById('subtotalFacturaTicket').value=subt?.[1]||'';
+  document.getElementById('ivaFacturaTicket').value=iva?.[1]||'';
+  document.getElementById('totalFacturaTicket').value=total?.[1]||'';
+  const header=lineas.findIndex(l=>/C[oó]digo/i.test(l.texto)&&/Producto/i.test(l.texto)&&/Cantidad/i.test(l.texto));
+  const rows=[];
+  if(header>=0) for(let k=header+1;k<lineas.length;k++) {
+    const l=lineas[k];
+    if(/Saldo al|Observaciones\s*:|Descuento\s+\d|Importe Total/i.test(l.texto)) break;
+    // Formato de factura Fidel A4: SKU x≈43; descripción x≈98; cantidad x≈304; subtotal IVA x≈510
+    const sku=textoColumnaTicket(l,35,96).replace(/\s+/g,' ').trim();
+    const descripcion=textoColumnaTicket(l,96,298);
+    const cantidad=textoColumnaTicket(l,298,335);
+    const conIva=textoColumnaTicket(l,505,700);
+    if(!sku || !/^\d+(?:[.,]\d+)?$/.test(cantidad.replace(/\s/g,''))) continue;
+    const importe=(conIva.match(/[\d.]+,\d{2}/g)||[]).pop()||'';
+    rows.push({sku,descripcion,cantidad,importe});
+  }
+  filasFacturaTicket=rows;
+  dibujarFilasFacturaTicket();
+  return rows.length;
+}
+async function cargarPdfJsFacturaTicket() {
+  if(window.pdfjsLib) return;
+  await new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload=resolve; s.onerror=()=>reject(new Error('No se pudo cargar el lector de PDF. Revisá Internet.'));
+    document.head.appendChild(s);
+  });
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+async function leerFacturaTicket(file) {
+  if(!file) return;
+  const estado=document.getElementById('estadoFacturaTicket');
+  estado.textContent='Leyendo PDF...';
+  document.getElementById('edicionFacturaTicket').classList.add('oculto');
+  try {
+    await cargarPdfJsFacturaTicket();
+    const pdf=await window.pdfjsLib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;
+    const pagina=await pdf.getPage(1);
+    const contenido=await pagina.getTextContent();
+    const n=extraerFacturaTicket(agruparLineasTicket(contenido.items));
+    document.getElementById('edicionFacturaTicket').classList.remove('oculto');
+    estado.textContent=n ? `Se detectaron ${n} productos. Revisá cantidades, importes y totales antes de imprimir.` : 'No se detectaron productos automáticamente. Podés cargarlos manualmente. Este lector está preparado para facturas PDF de Fidel con texto seleccionable.';
+  }catch(err) {estado.textContent='Error al leer PDF: '+err.message;}
+}
+function dibujarFilasFacturaTicket() {
+  document.getElementById('contadorFacturaTicket').textContent=filasFacturaTicket.length;
+  const h=filasFacturaTicket.map((r,i)=>`<tr><td><input style="min-width:88px;padding:5px;font-size:13px" value="${txtFacturaTicket(r.sku)}" oninput="filasFacturaTicket[${i}].sku=this.value"></td><td><input style="min-width:150px;padding:5px;font-size:13px" value="${txtFacturaTicket(r.descripcion)}" oninput="filasFacturaTicket[${i}].descripcion=this.value"></td><td><input style="min-width:55px;padding:5px;font-size:13px" value="${txtFacturaTicket(r.cantidad)}" oninput="filasFacturaTicket[${i}].cantidad=this.value"></td><td><input style="min-width:85px;padding:5px;font-size:13px" value="${txtFacturaTicket(r.importe)}" oninput="filasFacturaTicket[${i}].importe=this.value"></td><td><button style="padding:5px;font-size:13px" onclick="filasFacturaTicket.splice(${i},1);dibujarFilasFacturaTicket()">×</button></td></tr>`).join('');
+  document.getElementById('tablaFacturaTicket').innerHTML='<table style="font-size:12px"><thead><tr><th>SKU</th><th>Descripción</th><th>Cant.</th><th>Total c/IVA</th><th></th></tr></thead><tbody>'+h+'</tbody></table>';
+}
+function agregarFilaFacturaTicket() {filasFacturaTicket.push({sku:'',descripcion:'',cantidad:'1',importe:''});dibujarFilasFacturaTicket();}
+function imprimirFacturaTicket() {
+  if(!filasFacturaTicket.length) {alert('No hay productos para imprimir.');return;}
+  const ventana=window.open('','_blank');
+  if(!ventana) {alert('Chrome bloqueó la ventana de impresión. Permití ventanas emergentes para POS DEPO.');return;}
+  const lineas=filasFacturaTicket.map(r=>`<div class="producto"><div class="fila"><b>${txtFacturaTicket(r.sku)} x${txtFacturaTicket(r.cantidad)}</b></div><div class="descripcion">${txtFacturaTicket(abreviarFacturaTicket(r.descripcion))}</div><div class="importe">$ ${txtFacturaTicket(r.importe)}</div></div>`).join('');
+  ventana.document.open();
+  ventana.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ticket factura ${txtFacturaTicket(valorFacturaTicket('numeroFacturaTicket'))}</title><style>@page{size:58mm auto;margin:2mm}*{box-sizing:border-box}body{font:11px monospace;width:54mm;max-width:54mm;margin:0;color:#000}.centro{text-align:center}.producto{border-top:1px dashed #777;padding:3px 0;break-inside:avoid}.descripcion{overflow-wrap:anywhere}.importe{text-align:right;font-weight:bold;font-size:12px}.totales{border-top:1px solid #000;margin-top:5px;padding-top:5px}.totales div{display:flex;justify-content:space-between}.total{font-weight:bold;font-size:13px}.imprimir{display:block;width:100%;font-size:16px;padding:10px;margin-bottom:15px}@media print{.imprimir{display:none}}</style></head><body><button class="imprimir" onclick="window.print()">IMPRIMIR</button><div class="centro"><b>RESUMEN DE FACTURA</b><div>${txtFacturaTicket(valorFacturaTicket('tipoFacturaTicket'))} ${txtFacturaTicket(valorFacturaTicket('numeroFacturaTicket'))}</div></div><p>CLI: ${txtFacturaTicket(valorFacturaTicket('clienteFacturaTicket'))}</p><div>CÓDIGO / CANTIDAD / DESCRIP.</div>${lineas}<div class="totales"><div><span>SUBTOTAL</span><span>$ ${txtFacturaTicket(valorFacturaTicket('subtotalFacturaTicket'))}</span></div><div><span>IVA</span><span>$ ${txtFacturaTicket(valorFacturaTicket('ivaFacturaTicket'))}</span></div><div class="total"><span>TOTAL</span><span>$ ${txtFacturaTicket(valorFacturaTicket('totalFacturaTicket'))}</span></div></div><p class="centro">RESUMEN INTERNO<br>NO VALIDO COMO FACTURA</p></body></html>`);
+  ventana.document.close();
+}
+
 </script>
 </body>
 </html>
