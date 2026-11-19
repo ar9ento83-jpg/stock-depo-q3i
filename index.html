@@ -3503,7 +3503,23 @@ let filasFacturaTicket = [];
 function txtFacturaTicket(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function valorFacturaTicket(id) { return document.getElementById(id).value.trim(); }
 function abreviarFacturaTicket(s) {
-  return String(s||'').split(/(\s+)/).map(p => /^\s+$/.test(p) ? ' ' : p.length>3 ? p.slice(0,3) : p).join('').replace(/\s+/g,' ').trim();
+  // Una sola linea: conservar las palabras completas cuando entren.
+  // Si no entran, abreviar progresivamente hasta un minimo de 3 caracteres.
+  const limite = 29; // ancho conservador para ticket termico de 58 mm
+  const palabras = String(s||'').replace(/\\s+/g,' ').trim().split(' ').filter(Boolean);
+  let partes = palabras.slice();
+  if (partes.join(' ').length <= limite) return partes.join(' ');
+  while (partes.join(' ').length > limite) {
+    let indice = -1, ahorro = 0;
+    for (let i=0;i<partes.length;i++) {
+      const reducible = partes[i].length - Math.min(3,palabras[i].length);
+      if (reducible > ahorro) { ahorro = reducible; indice = i; }
+    }
+    if (indice < 0) break;
+    partes[indice] = partes[indice].slice(0,3);
+  }
+  const resultado = partes.join(' ');
+  return resultado.length > limite ? resultado.slice(0,limite).trimEnd() : resultado;
 }
 function normalizarDineroTicket(s) { return String(s||'').replace(/[^\d,.\-]/g,'').trim(); }
 function agruparLineasTicket(items) {
@@ -3586,7 +3602,7 @@ function imprimirFacturaTicket() {
   if(!ventana) {alert('Chrome bloqueó la ventana de impresión. Permití ventanas emergentes para POS DEPO.');return;}
   const lineas=filasFacturaTicket.map(r=>`<div class="producto"><div class="fila"><b>${txtFacturaTicket(r.sku)} x${txtFacturaTicket(r.cantidad)}</b></div><div class="descripcion">${txtFacturaTicket(abreviarFacturaTicket(r.descripcion))}</div><div class="importe">$ ${txtFacturaTicket(r.importe)}</div></div>`).join('');
   ventana.document.open();
-  ventana.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ticket factura ${txtFacturaTicket(valorFacturaTicket('numeroFacturaTicket'))}</title><style>@page{size:58mm auto;margin:2mm}*{box-sizing:border-box}body{font:11px monospace;width:54mm;max-width:54mm;margin:0;color:#000}.centro{text-align:center}.producto{border-top:1px dashed #777;padding:3px 0;break-inside:avoid}.descripcion{overflow-wrap:anywhere}.importe{text-align:right;font-weight:bold;font-size:12px}.totales{border-top:1px solid #000;margin-top:5px;padding-top:5px}.totales div{display:flex;justify-content:space-between}.total{font-weight:bold;font-size:13px}.imprimir{display:block;width:100%;font-size:16px;padding:10px;margin-bottom:15px}@media print{.imprimir{display:none}}</style></head><body><button class="imprimir" onclick="window.print()">IMPRIMIR</button><div class="centro"><b>RESUMEN DE FACTURA</b><div>${txtFacturaTicket(valorFacturaTicket('tipoFacturaTicket'))} ${txtFacturaTicket(valorFacturaTicket('numeroFacturaTicket'))}</div></div><p>CLI: ${txtFacturaTicket(valorFacturaTicket('clienteFacturaTicket'))}</p><div>CÓDIGO / CANTIDAD / DESCRIP.</div>${lineas}<div class="totales"><div><span>SUBTOTAL</span><span>$ ${txtFacturaTicket(valorFacturaTicket('subtotalFacturaTicket'))}</span></div><div><span>IVA</span><span>$ ${txtFacturaTicket(valorFacturaTicket('ivaFacturaTicket'))}</span></div><div class="total"><span>TOTAL</span><span>$ ${txtFacturaTicket(valorFacturaTicket('totalFacturaTicket'))}</span></div></div><p class="centro">RESUMEN INTERNO<br>NO VALIDO COMO FACTURA</p></body></html>`);
+  ventana.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ticket factura ${txtFacturaTicket(valorFacturaTicket('numeroFacturaTicket'))}</title><style>@page{size:58mm auto;margin:2mm}*{box-sizing:border-box}body{font:11px monospace;width:54mm;max-width:54mm;margin:0;color:#000}.centro{text-align:center}.producto{border-top:1px dashed #777;padding:3px 0;break-inside:avoid}.descripcion{white-space:nowrap;overflow:hidden;text-overflow:clip}.importe{text-align:right;font-weight:bold;font-size:12px}.totales{border-top:1px solid #000;margin-top:5px;padding-top:5px}.totales div{display:flex;justify-content:space-between}.total{font-weight:bold;font-size:13px}.imprimir{display:block;width:100%;font-size:16px;padding:10px;margin-bottom:15px}@media print{.imprimir{display:none}}</style></head><body><button class="imprimir" onclick="window.print()">IMPRIMIR</button><div class="centro"><b>RESUMEN DE FACTURA</b><div>${txtFacturaTicket(valorFacturaTicket('tipoFacturaTicket'))} ${txtFacturaTicket(valorFacturaTicket('numeroFacturaTicket'))}</div></div><p>CLI: ${txtFacturaTicket(valorFacturaTicket('clienteFacturaTicket'))}</p><div>CÓDIGO / CANTIDAD / DESCRIP.</div>${lineas}<div class="totales"><div><span>SUBTOTAL</span><span>$ ${txtFacturaTicket(valorFacturaTicket('subtotalFacturaTicket'))}</span></div><div><span>IVA</span><span>$ ${txtFacturaTicket(valorFacturaTicket('ivaFacturaTicket'))}</span></div><div class="total"><span>TOTAL</span><span>$ ${txtFacturaTicket(valorFacturaTicket('totalFacturaTicket'))}</span></div></div><p class="centro">RESUMEN INTERNO<br>NO VALIDO COMO FACTURA</p></body></html>`);
   ventana.document.close();
   ventana.focus();
   // Igual que los informes de remitos: lanzar la impresión al cargar el ticket.
