@@ -65,6 +65,8 @@ input[readonly] { background: #e9edf0; }
 .menu .pendiente { background: #607d8b; }
 .cajones-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; }
 .cajones-grid button { margin:0; padding:12px 5px; font-size:15px; }
+.cajones-grid button.cajon-deposito {background:#e7b62e;color:#252525;}
+.cajones-grid button.cajon-viaje {background:#176b40;color:white;}
 .cajones-grid button.cajon-vacio {background:#dce0e4;color:#46525c;border:1px solid #b7c0c8;}
 .cajones-grid button.cajon-vacio small {color:#5c6770;}
 #panelExternoSimple {background:#eff7f1;padding:12px;border-radius:10px;margin:10px 0;}
@@ -136,7 +138,7 @@ input[readonly] { background: #e9edf0; }
 .contenedor-busqueda {
   position: relative;
 }
-#sugerenciasIngreso, #sugerenciasExternoCarga {
+#sugerenciasIngreso, #sugerenciasExternoCarga, #sugerenciasStock {
   background: white;
   border: 1px solid #cbd5dc;
   border-radius: 10px;
@@ -290,9 +292,10 @@ input[readonly] { background: #e9edf0; }
   </button>
   <div class="panel">
     <h3>Consultar stock</h3>
-    <input id="codigo"
-      placeholder="SKU o código de barras"
-      autocomplete="off">
+    <div class="contenedor-busqueda"><input id="codigo"
+       placeholder="SKU, código de barras o descripción"
+       autocomplete="off" oninput="programarSugerenciasStock()">
+       <div id="sugerenciasStock" class="oculto"></div></div>
     <button onclick="buscar()">BUSCAR</button>
     <button onclick="abrirCamara()">ESCANEAR</button>
     <button class="secundario" onclick="cerrarCamara()">
@@ -301,9 +304,19 @@ input[readonly] { background: #e9edf0; }
     <video id="video" autoplay playsinline></video>
     <div id="memoriaStock" class="memoria-lecturas" aria-live="polite"></div>
     <div id="resultado">Esperando producto...</div>
+    <div id="agregarCarroStock" class="oculto"></div>
+    <button id="botonVerCarro" class="secundario oculto" onclick="abrirCarroStock()">🛒 VER CARRO (0)</button>
   </div>
 </section>
 
+<section id="pantallaCarroStock" class="oculto">
+ <button class="secundario" onclick="mostrarPantalla('pantallaStock')">← VOLVER A CONSULTAR STOCK</button>
+ <div class="panel"><h3>🛒 Carro de mercadería</h3><p class="nota">Las existencias se descuentan únicamente al confirmar.</p>
+ <div id="listaCarroStock"></div><p id="estadoCarroStock" class="nota"></p>
+ <button onclick="operarCarroStock('RETIRAR')">🛒 RETIRAR</button>
+ <button class="secundario" onclick="operarCarroStock('TRANSFERIR')">↔ TRANSFERIR</button>
+ <button class="secundario" onclick="vaciarCarroStock()">VACIAR CARRO</button></div>
+</section>
 <section id="pantallaIngreso" class="oculto">
   <button class="secundario" onclick="volverMenu()">
     ← VOLVER AL MENÚ
@@ -624,6 +637,8 @@ input[readonly] { background: #e9edf0; }
     <select id="configNumeroCajon" onchange="cargarCajonConfig()" style="width:100%;padding:14px;font-size:17px"></select>
     <input id="configNombreCajon" placeholder="Nombre del cajón" autocomplete="off">
     <label><input id="configActivoCajon" type="checkbox" style="width:auto"> Cajón activo</label>
+    <label>Ubicación física del cajón</label><select id="configUbicacionCajon" style="width:100%;padding:14px;font-size:17px">
+      <option value="VIAJE">🟢 EN VIAJE</option><option value="DEPOSITO">🟡 EN DEPÓSITO</option></select>
     <button onclick="guardarCajonConfig()">GUARDAR CAJÓN</button>
     <p class="nota">Para agregar varios cajones, aumentá la cantidad total. Para agregar uno, aumentala en 1. No se permite desactivar cajones con mercadería.</p>
   </div>
@@ -943,6 +958,7 @@ function mostrarPantalla(id) {
   [
     "pantallaMenu",
     "pantallaStock",
+    "pantallaCarroStock",
     "pantallaFacturaTicket",
     "pantallaIngreso",
     "pantallaHistorialRemitos",
@@ -984,6 +1000,7 @@ function abrirModulo(modulo) {
 
   if (modulo === "stock") {
     mostrarPantalla("pantallaStock");
+    actualizarVisibilidadCarro();
     return;
   }
 
@@ -1103,6 +1120,8 @@ async function abrirDepositoExterno(id) {
       const boton = document.createElement("button");
       boton.textContent = `${String(cajon.numero).padStart(2,"0")} · ${cajon.nombre || "CAJON " + String(cajon.numero).padStart(2,"0")} · ${cajon.skuDiferentes} PRODUCTOS`;
       boton.title = `${cajon.unidades} unidades`;
+      boton.classList.add(cajon.ubicacion==='DEPOSITO'?'cajon-deposito':'cajon-viaje');
+      boton.textContent += cajon.ubicacion==='DEPOSITO'?' · EN DEPÓSITO':' · EN VIAJE';
       if (!(Number(cajon.unidades)>0)) { boton.classList.add("cajon-vacio"); boton.textContent += " · VACÍO"; }
       boton.addEventListener("click", () => abrirDetalleCajon(cajon));
       lista.appendChild(boton);
@@ -1702,7 +1721,12 @@ async function confirmarAgregarExterno() {
        modoExterno === 'DEVOLVER' ? 'Devolución registrada correctamente.' : 'Mercadería agregada correctamente.'));
     // La pantalla de cajones se actualizará al regresar.
   } catch(e) {
-    estadoCargaExterna('No se pudo comprobar el guardado: '+e.message+'\nNo borres la lista. Reintentá la misma confirmación.');
+    if (/No hay suficientes unidades|Cantidad existente inválida|Producto o cantidad inválidos|SKU duplicado|Cajón desactivado/i.test(e.message)) {
+      pendienteExternoDatos=null; pendienteExternoId=null;
+      estadoCargaExterna('Cantidad rechazada: '+e.message+'\nCorregí la lista o deshacé el último producto. No se descontó mercadería.');
+    } else {
+      estadoCargaExterna('No se pudo comprobar el guardado: '+e.message+'\nSi hubo un problema de conexión, reintentá la misma confirmación.');
+    }
   } finally {
     guardandoExterno=false; boton.disabled=false;
     boton.textContent=pendienteExternoDatos?'REINTENTAR CONFIRMACIÓN':
@@ -1828,6 +1852,7 @@ async function buscar() {
           `cajón ${c.numero}: ${c.cantidad}`).join(", ") + ")" : ""))
       .join("\n");
     memoriaLectura("stock",producto.sku);
+    productoConsultadoCarro=producto; renderizarOrigenesCarro(producto);
     resultado.textContent =
       "SKU: " + producto.sku + "\n" +
       "Descripción: " + producto.descripcion + "\n" +
@@ -3429,6 +3454,7 @@ function cargarCajonConfig() {
   const c=configExterna.cajones.find(x=>x.depositoId===configDepositoId && x.numero===n);
   document.getElementById('configNombreCajon').value=c?.nombre||('CAJON '+String(n).padStart(2,'0'));
   document.getElementById('configActivoCajon').checked=c?c.activo:true;
+  document.getElementById('configUbicacionCajon').value=c?.ubicacion||'VIAJE';
 }
 async function guardarConfigExterna(datos) {
   try {
@@ -3463,9 +3489,100 @@ function guardarCajonConfig() {
   const numero=Number(document.getElementById('configNumeroCajon').value);
   const nombre=document.getElementById('configNombreCajon').value.trim();
   const activo=document.getElementById('configActivoCajon').checked;
+  const ubicacion=document.getElementById('configUbicacionCajon').value;
   if(!numero)return mensajeConfigExterna('Seleccioná un cajón.');
   if(!confirm('¿Guardar cajón '+numero+' de '+configDepositoId+'?'))return;
-  guardarConfigExterna({accion:'editar-cajon',depositoId:configDepositoId,numero,nombre,activo});
+  guardarConfigExterna({accion:'editar-cajon',depositoId:configDepositoId,numero,nombre,activo,ubicacion});
+}
+
+
+// CONSULTAR STOCK: sugerencias y carro, sin modificar STOCK principal.
+let productoConsultadoCarro=null,carroStock=[],temporizadorStock=null,solicitudStock=0,carroProcesando=false,carroPendiente=null;
+function puedeOperarCarro(){return ['ADMIN','OPERADOR'].includes(rolUsuario);}
+function actualizarVisibilidadCarro(){
+ const b=document.getElementById('botonVerCarro');
+ b.classList.toggle('oculto',!puedeOperarCarro());
+ b.textContent='🛒 VER CARRO ('+carroStock.length+')';
+}
+function programarSugerenciasStock(){
+ clearTimeout(temporizadorStock);const valor=document.getElementById('codigo').value.trim();
+ const lista=document.getElementById('sugerenciasStock');const turno=++solicitudStock;
+ if(valor.length<2){lista.classList.add('oculto');lista.replaceChildren();return;}
+ lista.textContent='Buscando...';lista.classList.remove('oculto');
+ temporizadorStock=setTimeout(async()=>{
+  try {const r=await solicitarExterno('/buscar-productos',{busqueda:valor});if(turno!==solicitudStock)return;
+   lista.replaceChildren();for(const p of r.productos||[]){const b=document.createElement('button');b.className='sugerencia';
+    b.textContent=p.sku+' · '+p.descripcion;b.onclick=()=>{document.getElementById('codigo').value=p.sku;lista.classList.add('oculto');buscar();};lista.appendChild(b);}
+   if(!lista.children.length)lista.textContent='Sin coincidencias';
+  }catch(e){if(turno===solicitudStock)lista.textContent=e.message;}
+ },300);
+}
+function renderizarOrigenesCarro(p){
+ const div=document.getElementById('agregarCarroStock');div.replaceChildren();div.classList.toggle('oculto',!puedeOperarCarro());
+ if(!puedeOperarCarro())return;
+ const titulo=document.createElement('h4');titulo.textContent='🛒 Agregar al carro desde un cajón';div.appendChild(titulo);
+ let cantidadCajones=0;
+ for(const d of p.depositosExternos||[])for(const c of d.cajones||[]){
+  if(Number(c.cantidad)<=0)continue;cantidadCajones++;
+  const fila=document.createElement('div');fila.className='externo-fila';
+  const label=document.createElement('div');label.textContent=d.nombre+' · Cajón '+c.numero+' · Disponibles: '+c.cantidad;
+  const input=document.createElement('input');input.type='number';input.min='1';input.max=String(c.cantidad);input.step='1';input.value='1';input.inputMode='numeric';
+  const btn=document.createElement('button');btn.textContent='🛒 AGREGAR';btn.onclick=()=>{
+   const n=Number(input.value);if(!Number.isSafeInteger(n)||n<1||n>Number(c.cantidad)){alert('Cantidad inválida. Disponibles: '+c.cantidad);return;}
+   const k=[d.id,c.numero,p.sku].join('|');const existente=carroStock.find(x=>x.clave===k);
+   if((existente?.cantidad||0)+n>Number(c.cantidad)){alert('Ya tenés unidades en el carro. Disponibles: '+c.cantidad);return;}
+   if(existente)existente.cantidad+=n;else carroStock.push({clave:k,depositoId:d.id,depositoNombre:d.nombre,cajon:Number(c.numero),sku:p.sku,descripcion:p.descripcion,cantidad:n});
+   actualizarVisibilidadCarro();btn.textContent='✓ AGREGADO';setTimeout(()=>btn.textContent='🛒 AGREGAR',900);
+  };
+  fila.append(label,input,btn);div.appendChild(fila);
+ }
+ if(!cantidadCajones){const nota=document.createElement('p');nota.textContent='No hay existencias en cajones externos.';div.appendChild(nota);}
+ actualizarVisibilidadCarro();
+}
+function abrirCarroStock(){if(!puedeOperarCarro())return;mostrarPantalla('pantallaCarroStock');renderizarCarroStock();}
+function renderizarCarroStock(){
+ const lista=document.getElementById('listaCarroStock');lista.replaceChildren();
+ if(!carroStock.length){lista.textContent='El carro está vacío.';return;}
+ carroStock.forEach((p,i)=>{const fila=document.createElement('div');fila.className='externo-fila';
+  const t=document.createElement('div');t.textContent=p.sku+' · '+p.descripcion+' · '+p.depositoNombre+' / Cajón '+p.cajon;
+  const q=document.createElement('input');q.type='number';q.min='1';q.step='1';q.value=p.cantidad;q.disabled=carroProcesando||!!carroPendiente;
+  q.onchange=()=>{const n=Number(q.value);if(!Number.isSafeInteger(n)||n<1){alert('Ingresá una cantidad válida');q.value=p.cantidad;return;}p.cantidad=n;};
+  const x=document.createElement('button');x.className='secundario';x.textContent='QUITAR';x.disabled=carroProcesando||!!carroPendiente;
+  x.onclick=()=>{carroStock.splice(i,1);renderizarCarroStock();actualizarVisibilidadCarro();};fila.append(t,q,x);lista.appendChild(fila);
+ });
+}
+function vaciarCarroStock(){if(carroProcesando||carroPendiente)return;if(confirm('¿Vaciar el carro sin descontar existencias?')){carroStock=[];renderizarCarroStock();actualizarVisibilidadCarro();}}
+async function operarCarroStock(modo){
+ if(!puedeOperarCarro()||carroProcesando||!carroStock.length)return;
+ const estado=document.getElementById('estadoCarroStock');
+ if(!carroPendiente){
+  const items=[];
+  for(const p of carroStock){const item={depositoId:p.depositoId,cajon:p.cajon,sku:p.sku,cantidad:p.cantidad};
+   if(modo==='TRANSFERIR'){
+    const ds=await solicitarExterno('/depositos-externos');
+    const opciones=ds.depositos||[];
+    const textoOpciones=opciones.map(d=>d.id+' = '+d.nombre).join('\n');
+    const dep=prompt('Destino para '+p.sku+' desde cajón '+p.cajon+'\n'+textoOpciones+'\nID del depósito:',p.depositoId);
+    if(dep===null)return;
+    const n=prompt('Número de cajón de destino para '+p.sku+':');if(n===null)return;
+    item.destinoDepositoId=dep.trim();item.destinoCajon=Number(n);
+    if(!Number.isSafeInteger(item.destinoCajon)||item.destinoCajon<1){estado.textContent='Cajón de destino inválido';return;}
+   }
+   items.push(item);
+  }
+  if(!confirm('¿Confirmar '+modo+' de '+items.reduce((n,p)=>n+p.cantidad,0)+' unidades?\nSe actualizarán las existencias reales de los cajones.'))return;
+  carroPendiente={modo,items,operacionId:crypto.randomUUID().replaceAll('-','')};
+ }
+ carroProcesando=true;estado.textContent='Guardando operación...';renderizarCarroStock();
+ try{const r=await solicitarExterno('/operar-carro-externo',carroPendiente);
+  carroPendiente=null;carroStock=[];estado.textContent=r.duplicado?'Operación ya registrada; no se duplicó.':'Operación confirmada correctamente.';
+  actualizarVisibilidadCarro();
+ }catch(e){
+  estado.textContent='No se pudo completar: '+e.message;
+  if(/No hay suficientes unidades|inválid|duplicad|no disponible|Sin permiso/i.test(e.message)){
+   carroPendiente=null;estado.textContent+='\nCorregí la cantidad y volvé a confirmar.';
+  }else estado.textContent+='\nSi hubo un error de conexión, reintentá sin cambiar el carro.';
+ }finally{carroProcesando=false;renderizarCarroStock();}
 }
 
 // INICIALIZACIÓN GOOGLE
