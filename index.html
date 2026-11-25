@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -211,7 +210,7 @@ input[readonly] { background: #e9edf0; }
 .lista-factura-compacta{margin:8px 0;padding:7px 9px;background:#f4f7f9;border-radius:8px;font-size:13px}
 .factura-lineas-resumen{max-height:185px;overflow-y:auto}.factura-linea{padding:3px 0;border-bottom:1px solid #e1e5e8;font-size:12px}
 </style>
-</head>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.4/jspdf.plugin.autotable.min.js"></script></head>
 
 <body>
 <h2>POS DEPO</h2>
@@ -280,7 +279,7 @@ input[readonly] { background: #e9edf0; }
       <p><b>Productos detectados:</b> <span id="contadorFacturaTicket">0</span></p>
       <div id="tablaFacturaTicket" style="overflow-x:auto"></div>
       <button onclick="agregarFilaFacturaTicket()" class="secundario">+ AGREGAR PRODUCTO</button>
-      <button onclick="imprimirFacturaTicket()">🖨️ IMPRIMIR RESUMEN</button>
+      <button onclick="imprimirFacturaTicket()">🖨️ GENERAR PDF RESUMEN</button>
       <small>La impresión abre el diálogo de Chrome. La impresora integrada del Q3i debe ser compatible con impresión desde el navegador.</small>
     </div>
   </div>
@@ -451,7 +450,7 @@ input[readonly] { background: #e9edf0; }
     <div id="listaHistorialRemitos"></div>
     <div id="detalleHistorialRemito" class="panel-consulta-recepcion oculto">
       <div id="cabeceraDetalleHistorial"></div>
-      <button class="secundario" onclick="imprimirInformeRemito()">🖨️ IMPRIMIR INFORME</button>
+      <button class="secundario" onclick="imprimirInformeRemito()">🖨️ GENERAR PDF INFORME</button>
       <button class="secundario" onclick="abrirComparacionFactura()">⚖️ COMPARAR CON FACTURA</button>
       <div id="panelComparacionFactura" class="panel-consulta-recepcion oculto">
         <button class="secundario" onclick="cerrarComparacionFactura()">← VOLVER AL DETALLE DEL REMITO</button>
@@ -473,7 +472,7 @@ input[readonly] { background: #e9edf0; }
           <p class="nota">Hoja FACTURAS_PROVEEDORES: RECEPCION_ID | REMITO | SKU | CANTIDAD | CAJA | DESCRIPCION. La caja es obligatoria para comparar POR CAJA. Podés colocar el RECEPCION_ID solo en la primera fila del bloque de artículos y dejar vacías las celdas de ID siguientes; al importar, se completan automáticamente hasta el próximo ID o remito diferente. Si completás REMITO en cada fila, también se asigna el ID cuando ese número es único. La importación reemplaza la lista manual después de confirmar.</p>
           <div id="lineasFacturaIngresadas" class="lista-factura-compacta"></div>
           <button class="secundario" onclick="deshacerUltimaLineaFactura()">↶ DESHACER ÚLTIMO PRODUCTO</button>
-          <button class="secundario" onclick="imprimirComparacionFactura()">🖨️ IMPRIMIR COMPARACIÓN</button>
+          <button class="secundario" onclick="imprimirComparacionFactura()">🖨️ GENERAR PDF COMPARACIÓN</button>
           <button class="secundario" onclick="elegirModoComparacion('')">CAMBIAR MODALIDAD</button>
         </div>
       </div>
@@ -494,7 +493,7 @@ input[readonly] { background: #e9edf0; }
     <p class="nota">Seleccioná un depósito para ver sus cajones.</p>
     <button id="botonConfigExterna" class="secundario oculto" onclick="abrirConfigExterna()">⚙️ CONFIGURACIÓN (ADMIN)</button>
     <button class="secundario" onclick="abrirInformesExternos()">🖨️ INFORMES</button>
-    <div id="listaDepositosExternos">Cargando depósitos...</div>
+    <button data-requiere-operador onclick="abrirVentas()">📊 DESCONTAR VENTAS</button><div id="panelVentas" class="oculto panel"><select id="depVentas" style="width:100%;padding:12px"></select><input type="file" id="excelVentas" accept=".xlsx,.xls,.csv"><button onclick="prepararVentas()">REVISAR EXCEL</button><div id="estadoVentas"></div><button id="confirmarVentasBtn" class="oculto" onclick="guardarVentas()">CONFIRMAR DESCUENTO</button></div><div id="listaDepositosExternos">Cargando depósitos...</div>
 
   </div>
 </section>
@@ -507,8 +506,8 @@ input[readonly] { background: #e9edf0; }
       <select id="depositoInformeExterno" style="width:100%;padding:13px;font-size:16px"></select>
     </label>
     <p class="nota">Los informes corresponden únicamente al depósito seleccionado.</p>
-    <button onclick="imprimirStockExternoTotal()">1 · IMPRIMIR STOCK TOTAL</button>
-    <button onclick="imprimirStockExternoPorCaja()">2 · IMPRIMIR STOCK POR CAJA</button>
+    <button onclick="imprimirStockExternoTotal()">1 · GENERAR PDF STOCK TOTAL</button>
+    <button onclick="imprimirStockExternoPorCaja()">2 · GENERAR PDF STOCK POR CAJA</button>
     <div style="margin-top:14px;padding:12px;border:1px solid #cbd1d5;border-radius:9px">
       <label for="filtroMovimientosExternos">Historial de movimientos · Mostrar</label>
       <select id="filtroMovimientosExternos" style="width:100%;padding:12px;font-size:16px;margin:8px 0">
@@ -517,10 +516,10 @@ input[readonly] { background: #e9edf0; }
         <option value="DEVOLUCION">SOLO DEVOLUCIONES</option>
         <option value="RECUENTO">SOLO RECUENTOS</option>
       </select>
-      <button onclick="imprimirHistorialExterno()">3 · IMPRIMIR HISTORIAL DE MOVIMIENTOS</button>
+      <button onclick="imprimirHistorialExterno()">3 · GENERAR PDF HISTORIAL DE MOVIMIENTOS</button>
       <p class="nota">Se imprimen primero los movimientos más recientes, según el orden de registro.</p>
     </div>
-    <p id="estadoInformeExterno" class="nota" aria-live="polite"></p>
+    <input id="skuInformeVentas" placeholder="SKU para historial por artículo"><button onclick="informeVentas('articulo')">4 · HISTORIAL POR ARTÍCULO (PDF)</button><button onclick="informeVentas('faltantes')">5 · HISTORIAL DE FALTANTES (PDF)</button><p id="estadoInformeExterno" class="nota" aria-live="polite"></p>
   </div>
 </section>
 
@@ -704,7 +703,7 @@ function imprimirDocumentoExterno(titulo,contenido,w){
   </head><body><button class="imprimir" onclick="window.print()">IMPRIMIR / GUARDAR PDF</button><h1>${e(titulo)}</h1>${contenido}<p style="font-size:10px;margin-top:25px">POS DEPO · Informe de consulta generado el ${e(new Date().toLocaleString('es-AR'))}</p></body></html>`);
   w.document.close();w.focus();
   // Botón de impresión visible como respaldo si el diálogo automático no se abre.
-  setTimeout(()=>{try{if(!w.closed)w.print();}catch(_err){}},450);
+  generarPdfDesdeVentana(w);
 }
 async function datosInformeExterno(){
   const depositoId=depositoSeleccionadoParaInforme();
@@ -1076,7 +1075,7 @@ async function cargarDepositosExternos() {
       boton.addEventListener("click", () => abrirDepositoExterno(deposito.id));
       const detalle = document.createElement("small");
       detalle.textContent = `${deposito.cajonesConfigurados} cajones · ${deposito.skuDiferentes} PRODUCTOS · ${deposito.unidades} unidades`;
-      fila.append(boton, detalle);
+      fila.append(boton, detalle); if(puedeOperarCarro())solicitarExterno('/ventas-externas',{depositoId:deposito.id,accion:'historial'}).then(r=>{const x=r.registros.at(-1);const t=document.createElement('small');t.textContent='Última actualización de ventas: '+(x?x.fecha:'Sin importaciones');fila.append(t);}).catch(()=>{});
       lista.appendChild(fila);
     }
   } catch (error) {
@@ -2764,7 +2763,7 @@ function imprimirInformeRemito(){
   const ventana=window.open('','_blank');
   if(!ventana){alert('Chrome bloqueó la ventana de impresión. Permití ventanas emergentes para POS DEPO.');return;}
   ventana.document.open();ventana.document.write(cuerpo);ventana.document.close();ventana.focus();
-  ventana.addEventListener('load',()=>ventana.print(),{once:true});
+  generarPdfDesdeVentana(ventana);
 }
 let modoComparacionFactura='';
 let lineasComparacionFactura=[];
@@ -2980,7 +2979,7 @@ function imprimirComparacionFactura(){
   const ventana=window.open('','_blank');
   if(!ventana){alert('Chrome bloqueó la ventana de impresión. Permití ventanas emergentes.');return;}
   ventana.document.open();ventana.document.write(html);ventana.document.close();ventana.focus();
-  ventana.addEventListener('load',()=>ventana.print(),{once:true});
+  generarPdfDesdeVentana(ventana);
 }
 function alternarConfigRecepcion(){
   document.getElementById("configRecepcion").classList.toggle("oculto");
@@ -3723,8 +3722,23 @@ function imprimirFacturaTicket() {
   ventana.document.close();
   ventana.focus();
   // Igual que los informes de remitos: lanzar la impresión al cargar el ticket.
-  ventana.addEventListener('load',()=>ventana.print(),{once:true});
+  generarPdfDesdeVentana(ventana);
 }
+
+
+function generarPdfDesdeVentana(w){
+ try{const ticket=w.document.title.startsWith('Ticket factura');const doc=new window.jspdf.jsPDF(ticket?{unit:'mm',format:[58,Math.max(100,35+w.document.querySelectorAll('.producto').length*15)]}:{orientation:'landscape'});let y=10;const ancho=doc.internal.pageSize.getWidth()-12;doc.setFontSize(ticket?9:11);
+ const escribir=t=>{for(const l of doc.splitTextToSize(t,ancho)){if(y>doc.internal.pageSize.getHeight()-10){doc.addPage();y=10;}doc.text(l,6,y);y+=5;}};
+ function recorrer(el){if(el.tagName==='BUTTON'||el.tagName==='SCRIPT'||el.tagName==='STYLE')return;if(el.tagName==='TABLE'){doc.autoTable({html:el,startY:y,margin:6,styles:{fontSize:8,overflow:'linebreak'}});y=doc.lastAutoTable.finalY+6;return;}if(!el.querySelector('table')&& ![...el.children].some(x=>['DIV','SECTION','H1','H2','H3','P','FOOTER'].includes(x.tagName))){const t=el.innerText.trim();if(t)escribir(t);return;}for(const x of el.children)recorrer(x);}
+ recorrer(w.document.body);const url=doc.output('bloburl');w.location.href=url;
+ }catch(e){w.document.body.insertAdjacentText('afterbegin','No se pudo generar PDF: '+e.message+' ');}
+}
+let loteVentas=null,ocupadoVentas=false;
+function abrirVentas(){if(!puedeOperarCarro())return;const p=document.getElementById('panelVentas');p.classList.toggle('oculto');const s=document.getElementById('depVentas');s.replaceChildren(...depositosExternos.map(d=>new Option(d.nombre,d.id)));}
+async function prepararVentas(){if(ocupadoVentas)return;const estado=document.getElementById('estadoVentas'),btn=document.getElementById('confirmarVentasBtn');btn.classList.add('oculto');loteVentas=null;ocupadoVentas=true;try{const archivo=document.getElementById('excelVentas').files[0];if(!archivo)throw Error('Seleccioná un Excel');const wb=XLSX.read(await archivo.arrayBuffer(),{type:'array'}),rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});const items=[];for(let i=0;i<rows.length;i++){const [a,b]=rows[i];if(a==null&&b==null)continue;if(i===0&&/^(sku|c[oó]digo|art[ií]culo)$/i.test(String(a).trim()))continue;const q=typeof b==='number'?b:Number(String(b).trim().replace(',','.'));if(!String(a??'').trim()||!Number.isSafeInteger(q)||q<=0)throw Error('Fila '+(i+1)+' inválida');items.push({sku:String(a).trim(),cantidad:q});}const lote={depositoId:document.getElementById('depVentas').value,items,archivo:archivo.name,operacionId:crypto.randomUUID().replaceAll('-','')};const r=await solicitarExterno('/ventas-externas',{...lote,accion:'vista'});loteVentas={...lote,confirmarDuplicado:r.repetido};estado.innerHTML=tablaVentas(r.resumen)+(r.repetido?'<p>ATENCIÓN: contenido ya importado.</p>':'');btn.classList.remove('oculto');}catch(e){estado.textContent=e.message;}finally{ocupadoVentas=false;}}
+function tablaVentas(rows){const e=escaparInformeExterno;return '<table><tr><th>SKU</th><th>Vendido</th><th>Descontado</th><th>Faltante</th></tr>'+rows.map(r=>`<tr><td>${e(r.sku)}</td><td>${e(r.vendido)}</td><td>${e(r.descontado)}</td><td>${e(r.faltante)}</td></tr>`).join('')+'</table>';}
+async function guardarVentas(){if(!loteVentas||ocupadoVentas)return;if(!confirm(loteVentas.confirmarDuplicado?'Este contenido ya fue importado. ¿Confirmás que son otras ventas?':'¿Confirmás descontar las ventas de la camioneta seleccionada?'))return;ocupadoVentas=true;const estado=document.getElementById('estadoVentas');try{const r=await solicitarExterno('/ventas-externas',{...loteVentas,accion:'guardar'});estado.innerHTML=r.duplicado?'Operación ya registrada.':'Ventas guardadas. '+tablaVentas(r.resumen);loteVentas=null;document.getElementById('confirmarVentasBtn').classList.add('oculto');cargarDepositosExternos();}catch(e){estado.textContent=e.message+' — reintentá con el mismo lote.';}finally{ocupadoVentas=false;}}
+async function informeVentas(tipo){const w=abrirVentanaInformeExterno();if(!w)return;try{const depositoId=depositoSeleccionadoParaInforme(),e=escaparInformeExterno;if(tipo==='faltantes'){const r=await solicitarExterno('/ventas-externas',{depositoId,accion:'historial'});imprimirDocumentoExterno('Historial de faltantes — '+depositoId,r.faltantes.slice().reverse().map(x=>`<h3>${e(x.fecha)} · ${e(x.id)}</h3>${tablaVentas([x])}`).join('')||'<p>Sin faltantes</p>',w);}else{const sku=document.getElementById('skuInformeVentas').value.trim().toLowerCase();if(!sku)throw Error('Ingresá SKU');const r=await solicitarExterno('/historial-movimientos-externos',{depositoId});const rows=r.movimientos.filter(x=>x.sku.toLowerCase()===sku).reverse();imprimirDocumentoExterno('Historial por artículo — '+sku,`<table><tr><th>Fecha</th><th>Cajón</th><th>Tipo</th><th>Cantidad</th><th>Antes</th><th>Después</th><th>Usuario</th></tr>${rows.map(x=>`<tr><td>${e(x.fecha)}</td><td>${e(x.cajon)}</td><td>${e(x.tipo)}</td><td>${e(x.cantidad)}</td><td>${e(x.anterior)}</td><td>${e(x.nuevo)}</td><td>${e(x.usuario)}</td></tr>`).join('')}</table>`,w);}}catch(e){w.document.body.textContent=e.message;}}
 
 </script>
 </body>
